@@ -231,15 +231,15 @@ if __name__ == '__main__':
         params.gradient_accumulation = False
 
     # --- generate model as tensorflow graph (train) ------------------------------------------------------------------
-    print("Generating model ...")       
+    print("Generating model ...")
     transformer_decoder = model.TransformerDecoder(params=params)
     X_train = tf.placeholder(tf.int32, [None, params.clf_pipes, params.n_ctx, params.n_embd_d+1])
     M_train = tf.placeholder(tf.float32, [None, params.clf_pipes, params.n_ctx])
     Y_train = tf.placeholder(tf.int32, [None])
     result = transformer_decoder.mgpu_train(X_train, M_train, Y_train)
     train_step = result[0]
-    accumulation_step = result[1]
-    accumulation_init_step = result[2]
+    accumulation_step = result[1]       # None for rocstories
+    accumulation_init_step = result[2]  # None for rocstories
     if params.head_type == "clf":
         logits = result[3]
         clf_loss = result[4]
@@ -250,7 +250,7 @@ if __name__ == '__main__':
         loss = lm_loss
     else:
         raise ValueError("Not a valid head_type!")
-    config = tf.ConfigProto()
+    config = tf.ConfigProto()       # Tensorflow properties (ask Fabian)
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
     sess = tf.Session(config=config)
@@ -258,7 +258,7 @@ if __name__ == '__main__':
 
     # --- load pretrained parameter -----------------------------------------------------------------------------------
     print("Loading pretrained parameter ...")
-    transformer_decoder.init_and_load_parameter_from_file(sess=sess, path="model/")
+    transformer_decoder.init_and_load_parameter_from_file(sess=sess, path="model/")     # CONTINUE !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     # --- add evaluation nodes to tensorflow graph --------------------------------------------------------------------
     eval_mgpu_result = transformer_decoder.mgpu_predict(X_train, M_train, Y_train)

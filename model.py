@@ -158,10 +158,10 @@ class TransformerDecoder:
                     gpu_ops.append([lm_losses])
                 else:
                     raise ValueError("{} is not a valid parameter for head_type!".format(self.params.head_type))
-        ops = [tf.concat(op, 0) for op in zip(*gpu_ops)]    # concatenate the result from the different gpus
-        grads = utils.average_grads(gpu_grads)
+        ops = [tf.concat(op, 0) for op in zip(*gpu_ops)]    # concatenate the loss result from the different gpus
+        grads = utils.average_grads(gpu_grads)  # contains an average of the grads from each gpu and the corresponding variables
 
-        if self.params.gradient_accumulation:
+        if self.params.gradient_accumulation:       # False for rocstories
             tvars = utils.find_trainable_variables("model")
             accum_tvars = [tf.Variable(tf.zeros_like(tv.initialized_value()), trainable=False) for tv in tvars]
             zero_ops = [tv.assign(tf.zeros_like(tv)) for tv in accum_tvars]
@@ -170,12 +170,12 @@ class TransformerDecoder:
         else:
             zero_ops = None
             accum_ops = None
-            grads = [g for g, p in grads]
-
+            grads = [g for g, p in grads]       # returns only the gradients, not the variables
+        # Perform Optimization  (rocstories:- param.opt: adam)
         train = OPT_FNS[self.params.opt](tvars,
                                          grads,
                                          self.params.lr,
-                                         partial(LR_SCHEDULES[self.params.lr_schedule], warmup=self.params.lr_warmup),
+                                         partial(LR_SCHEDULES[self.params.lr_schedule], warmup=self.params.lr_warmup),  # i guess for changing the lr decay value over time (Not sure)
                                          self.params.n_updates_total,
                                          l2=self.params.l2,
                                          max_grad_norm=self.params.max_grad_norm,
