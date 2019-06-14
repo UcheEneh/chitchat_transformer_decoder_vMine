@@ -835,19 +835,19 @@ class Rocstories:
 
         # Worst line of code, I saw in my life, ever!
 
-        # Just computes the longest sequence in each input
+        # Just computes the longest sequence in each input ( a seq = combination of input, and both output sentences)
         self.params.n_ctx = min(
             max(        # the '+' just concatenates the list together
                 [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len])) for x1, x2, x3 in zip(trX1, trX2, trX3)]
                 + [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len])) for x1, x2, x3 in zip(vaX1, vaX2, vaX3)]
                 + [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len])) for x1, x2, x3 in zip(teX1, teX2, teX3)]
-            ) + 3,      # why '+ 3' ?? maybe position encoding???
+            ) + 3,      # '+ 3' for the sprecial variable (see __init__)
             self.params.n_ctx )
         # self.params.n_ctx = 77
         trX, trM = self.transform_roc(trX1, trX2, trX3)
         vaX, vaM = self.transform_roc(vaX1, vaX2, vaX3)
 
-        if self.params.submit:      # False initially, since at train phase
+        if self.params.submit:      # For Test. False initially, since at train phase
             teX, teM = self.transform_roc(teX1, teX2, teX3)
         else:
             teX = None
@@ -922,7 +922,7 @@ class Rocstories:
             l13 = len(x13)
             xmb[i, 0, :l12, 0] = x12    # so each input i (from 1 to 1497), contains a pair of right and wrong combinations. The labeling would be fixed after for loop
             xmb[i, 1, :l13, 0] = x13
-            mmb[i, 0, :l12] = 1         # i guess a mask to know the positions???
+            mmb[i, 0, :l12] = 1         # a mask to know the positions where the input stops in a sequence
             mmb[i, 1, :l13] = 1
         xmb[:, :, :, 1] = np.arange(self.params.n_vocab+self.params.n_special,
                                     self.params.n_vocab+self.params.n_special+self.params.n_ctx)    # fills up the last column with numbers from (40481 to 40481+77) (i guess for encoding the labels)

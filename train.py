@@ -231,7 +231,7 @@ if __name__ == '__main__':
         params.gradient_accumulation = False
 
     # --- generate model as tensorflow graph (train) ------------------------------------------------------------------
-    print("Generating model ...")       # !!!!!!!!!!!!!!!!!!!!!!!!!!!!! CONTINUE FROM HERE
+    print("Generating model ...")       
     transformer_decoder = model.TransformerDecoder(params=params)
     X_train = tf.placeholder(tf.int32, [None, params.clf_pipes, params.n_ctx, params.n_embd_d+1])
     M_train = tf.placeholder(tf.float32, [None, params.clf_pipes, params.n_ctx])

@@ -59,14 +59,14 @@ def stsb_label_encoding(labels, nclass=6):
                 Y[j,i] = np.floor(y) - y + 1
     return Y
 
-def shape_list(x):
+def shape_list(x):  # x: embedded input with addition of positional encoding
     """
     deal with dynamic shape in tensorflow cleanly
     """
-    ps = x.get_shape().as_list()
-    ts = tf.shape(x)
-    return [ts[i] if ps[i] is None else ps[i] for i in range(len(ps))]
-
+    ps = x.get_shape().as_list()    # just returns the shape in a list.     # diff between get_shape and tf.shape: https://stackoverflow.com/questions/37096225/how-to-understand-static-shape-and-dynamic-shape-in-tensorflow
+    ts = tf.shape(x)        # basically this is an op to get the dynamic shape of a tensor
+    return [ts[i] if ps[i] is None else ps[i] for i in range(len(ps))]      # not sure how but I think: what is returned is ps[i, :, :, ...] depending on the length of the list, ps
+                                                                            # Note: this isn't returning actual values, just the shape of the tensor. ts[i] becomes useful if the value in the list is None, as it dynamically calls for the value during computation.
 def np_softmax(x, t=1):
     x = x/t
     x = x - np.max(x, axis=-1, keepdims=True)
@@ -150,13 +150,13 @@ def convert_gradient_to_tensor(x):
 def assign_to_gpu(gpu=0, ps_dev="/device:CPU:0"):
     def _assign(op):
         node_def = op if isinstance(op, tf.NodeDef) else op.node_def
-        if node_def.op == "Variable":
+        if node_def.op == "Variable":   # returns the original device (gpu or cpu) if it's a Variable
             return ps_dev
-        else:
+        else:                           # else returns a (new) gpu with number from gpu value
             return "/gpu:%d" % gpu
     return _assign
 
-def average_grads(tower_grads):
+def average_grads(tower_grads):     # tower_grads:  contains the four lists of gradients from each gpu     [list(zip(grads, trainable_vars)), ...]
     def average_dense(grad_and_vars):
         if len(grad_and_vars) == 1:
             return grad_and_vars[0][0]
@@ -167,7 +167,7 @@ def average_grads(tower_grads):
         return grad / len(grad_and_vars)
 
     def average_sparse(grad_and_vars):
-        if len(grad_and_vars) == 1:
+        if len(grad_and_vars) == 1:     # if only one gpu used, no need for finding the average
             return grad_and_vars[0][0]
 
         indices = []
@@ -181,12 +181,12 @@ def average_grads(tower_grads):
 
     average_grads = []
     for grad_and_vars in zip(*tower_grads):
-        if grad_and_vars[0][0] is None:
+        if grad_and_vars[0][0] is None:     # if no gradient has been calculated yet
             grad = None
-        elif isinstance(grad_and_vars[0][0], tf.IndexedSlices):
+        elif isinstance(grad_and_vars[0][0], tf.IndexedSlices):     # if the tensors in the grads from gpu is an indexed slice (*Note: for loop, so this is done for each gpu)
             grad = average_sparse(grad_and_vars)
         else:
-            grad = average_dense(grad_and_vars)
+            grad = average_dense(grad_and_vars)     # the average of the gradients in returned with the corresponding variables
         v = grad_and_vars[0][1]
         grad_and_var = (grad, v)
         average_grads.append(grad_and_var)
