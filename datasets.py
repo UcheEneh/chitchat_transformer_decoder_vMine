@@ -825,7 +825,7 @@ class Rocstories:
         self.encoder['_classify_'] = len(self.encoder)
         self.params.clf_token = self.encoder['_classify_']
         self.n_special = 3
-        self.max_len = self.params.n_ctx // 2 - 2       # params.n_ctx = 512
+        self.max_len = self.params.n_ctx // 2 - 2       # params.n_ctx = 512    # don't know why 254 set as max_length
 
     def prepare_rocstories(self):
         (trX1, trX2, trX3, trY), \

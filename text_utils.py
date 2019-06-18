@@ -69,7 +69,7 @@ class TextEncoder(object):
             return self.cache[token]
         pairs = get_pairs(word)     # e.g. 'decided' returns: <class 'set'>: {('d', 'e'), ('e', 'c'), ('c', 'i'), ('i', 'd'), ('e', 'd</w>'),}
 
-        if not pairs:   # what case would this be so? Maybe single letter?
+        if not pairs:   # in single letter case
             return token+'</w>'
 
         while True:     # key below: - key function where each argument from pairs is passed, and comparison is performed based on its return value
@@ -122,8 +122,8 @@ class TextEncoder(object):
                         if str(token) in self.delex_dict:
                             text_tokens.append(self.encoder[self.delex_dict[str(token)]])
                             continue
-                    text_tokens.extend([self.encoder.get(t, 0) for t in self.bpe(token.text.lower()).split(' ')])   # !!!!!!!!!!!!!!!!!!!!!!!!!!!!! CONTINUE
                     # self.bpe(): takes in a word, if it's a single letter, returns the letter + </w> (# e.g. for only 'I': i</w>, encoder[i</w>] = 249 is then added to the list text_tokens ... and so on)
+                    text_tokens.extend([self.encoder.get(t, 0) for t in self.bpe(token.text.lower()).split(' ')])
                 texts_tokens.append(text_tokens)
         else:
             for text in texts:

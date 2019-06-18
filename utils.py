@@ -121,8 +121,9 @@ def remove_none(l):
     return [e for e in l if e is not None]
 
 def iter_data(*datas, n_batch=128, truncate=False, verbose=False, max_batches=float("inf")):
-    n = len(datas[0])
-    if truncate:
+    # For eval log: *datas = Xs, Ms, Ys, n_batch=params.n_batch_train (= 64), truncate=False, verbose=True
+    n = len(datas[0])   # length of Xs (1497 or so). For validation, n: 374
+    if truncate:        # i guess for fitting the data into the batch size incase n and n_batch not a fine division (i.e. % != 0)
         n = (n//n_batch)*n_batch
     n = min(n, max_batches*n_batch)
     n_batches = 0
@@ -130,12 +131,12 @@ def iter_data(*datas, n_batch=128, truncate=False, verbose=False, max_batches=fl
         f = sys.stderr
     else:
         f = open(os.devnull, 'w')
-    for i in tqdm(range(0, n, n_batch), total=n//n_batch, file=f, ncols=80, leave=False):
+    for i in tqdm(range(0, n, n_batch), total=n//n_batch, file=f, ncols=80, leave=False):   # i: [0, 64, 128, 192, ...]
         if n_batches >= max_batches: raise StopIteration
         if len(datas) == 1:
             yield datas[0][i:i+n_batch]
-        else:
-            yield (d[i:i+n_batch] for d in datas)
+        else:       # Basically seperate the data into batches
+            yield (d[i:i+n_batch] for d in datas)   # iter_data would now be a generator containing the data in the format here i.e. d[i:i+n_batch] where i in range(0, total_input_size, batch_size)
         n_batches += 1
 
 @function.Defun(
@@ -158,7 +159,7 @@ def assign_to_gpu(gpu=0, ps_dev="/device:CPU:0"):
 
 def average_grads(tower_grads):     # tower_grads:  contains the four lists of gradients from each gpu     [list(zip(grads, trainable_vars)), ...]
     def average_dense(grad_and_vars):
-        if len(grad_and_vars) == 1:
+        if len(grad_and_vars) == 1:     # if only one gpu used, no need for finding the average
             return grad_and_vars[0][0]
 
         grad = grad_and_vars[0][0]
@@ -183,7 +184,7 @@ def average_grads(tower_grads):     # tower_grads:  contains the four lists of g
     for grad_and_vars in zip(*tower_grads):
         if grad_and_vars[0][0] is None:     # if no gradient has been calculated yet
             grad = None
-        elif isinstance(grad_and_vars[0][0], tf.IndexedSlices):     # if the tensors in the grads from gpu is an indexed slice (*Note: for loop, so this is done for each gpu)
+        elif isinstance(grad_and_vars[0][0], tf.IndexedSlices):     # if the tensors in the grads from gpu is an indexed slice (*Note: for-loop, so this is done for each gpu)
             grad = average_sparse(grad_and_vars)
         else:
             grad = average_dense(grad_and_vars)     # the average of the gradients in returned with the corresponding variables
