@@ -13,15 +13,10 @@ from functools import partial
 
 # Single asterisk as used in function declaration allows variable number of arguments to be passed from calling
 # environment. Inside the function it behaves as a tuple.
-
-
 def encode_dataset(*splits, encoder):
     """
-
     for RocStories example:
-
     *splits: (trX1, trX2, trX3, trY), (vaX1, vaX2, vaX3, vaY), (teX1, teX2, teX3)
-
         where trX1: combination of input sentences from spring2016 test_val train split
               trX2: fifth sentence 1 from spring2016 test_val train split
               trX3: fifth sentence 2 from spring2016 test_val train split
@@ -131,7 +126,7 @@ def iter_data(*datas, n_batch=128, truncate=False, verbose=False, max_batches=fl
         f = sys.stderr
     else:
         f = open(os.devnull, 'w')
-    for i in tqdm(range(0, n, n_batch), total=n//n_batch, file=f, ncols=80, leave=False):   # i: [0, 64, 128, 192, ...]
+    for i in tqdm(range(0, n, n_batch), total=n//n_batch, file=f, ncols=80, leave=False):   # i: [0, 64, 128, 192, ...]     # for eval, n_batch = 16; i: [0, 16, 32, ..., 368, (369 - 374) ]
         if n_batches >= max_batches: raise StopIteration
         if len(datas) == 1:
             yield datas[0][i:i+n_batch]

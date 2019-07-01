@@ -16,6 +16,7 @@ import model
 import datasets
 import analysis
 
+# --dataset moviecorpus --desc moviecorpus --n_gpu 1 --use_encoder --submit
 
 # --- definitions -----------------------------------------------------------------------------------------------------
 PRED_FNS = {
@@ -51,7 +52,7 @@ def log(epoch, step):
     va_cost = va_cost/params.n_valid
     if params.head_type == "clf":   # logits necessary for clf so we can see the diff btw logits output and actual label
         # accuracy
-        tr_acc = skl_metrics.accuracy_score(data_train['y'][:params.n_valid], np.argmax(tr_logits, 1))*100.
+        tr_acc = skl_metrics.accuracy_score(data_train['y'][:params.n_valid], np.argmax(tr_logits, 1))*100.     # compare between label and argmax of the logits outputs for (x12, x13) along axis 1 to tell how many were predicted right
         va_acc = skl_metrics.accuracy_score(data_eval['y'], np.argmax(va_logits, 1))*100.
     elif params.head_type == "lm":
         # perplexity
@@ -76,17 +77,17 @@ def iter_apply(Xs, Ms, Ys, only_loss=True):
     fns = [lambda x:np.concatenate(x, 0), lambda x:float(np.sum(x))]
     results = []
     for xmb, mmb, ymb in utils.iter_data(Xs, Ms, Ys, n_batch=params.n_batch_train, truncate=False, verbose=True):   # iter_data divides the input, mask and label data into batches of size: n_batch_train (takes care of fitting input size to batch size)
-        n = len(xmb)
+        n = len(xmb)        # for eval, n_batch = 16; xmb: for each for-loop: data[h:h+n_batch] for h in [0, 16, 32, ..., 367, (368 - 374)
         if n == params.n_batch_train:   # divide the batch into no of gpu and get the logits and loss from all 4 (or 2 in my case) gpus
             # logits: the result from the last layer, loss: the difference between this result and label
             res = sess.run([eval_mgpu_logits, eval_mgpu_loss],
-                           {X_train: xmb, M_train: mmb, Y_train: ymb})
-        else:   # i guess for the last for-loop (last batch were Xs.length % n_batch_train != 0)
+                           {X_train: xmb, M_train: mmb, Y_train: ymb})          # xmb: shape (for eval): [16, 2, 77, 2]     # first 2: x12 and x13 input
+        else:   # for the last for-loop []i.e between (368 - 374) (last batch were Xs.length % n_batch_train != 0)
             res = sess.run([eval_logits, eval_loss], {X: xmb, M: mmb, Y: ymb})
         if only_loss:
-            res = res[1] * n            # [loss*n]
-        else:
-            res = [r*n for r in res]    # [logits*n, loss*n]
+            res = res[1] * n            # [loss*n]  (multiplied by n to calc the average loss across each batch_size later (since last batch has diff size) )
+        else:                                                       # logits: the result from the last layer, loss: the difference between this result and label
+            res = [r*n for r in res]    # [logits*n, loss*n]        # logits: shape [16, 2] telling us the result from comparing x12 and x13 in this batch of size 16
         results.append(res)
     if only_loss:
         return np.sum(results)      # return only the sum of losses
@@ -122,7 +123,7 @@ def predict():
             f.write('{}\t{}\n'.format(i, prediction))
 
 
-def save(path):
+def save(path):     # save the values of the trainable variables (we, h0, h1, ...)
     ps = sess.run(utils.find_trainable_variables('model'))
     joblib.dump(ps, utils.make_path(path))
 
@@ -186,6 +187,7 @@ if __name__ == '__main__':
     parser.add_argument('--e', type=float, default=defaults['e'])
     parser.add_argument('--eval_best_params', action='store_true')
     parser.add_argument('--dict_error_fix', type=bool, default=defaults['dict_error_fix'])
+    parser.add_argument('--use_encoder', action='store_true')   # default = False, but if put in the terminal call, becomes True
     params = parser.parse_args()
     print(params)
 
@@ -195,7 +197,7 @@ if __name__ == '__main__':
     tf.set_random_seed(params.seed)
 
     # --- logger ------------------------------------------------------------------------------------------------------
-    logger = utils.ResultLogger(path=os.path.join(params.log_dir, '{}.jsonl'.format(params.desc)), **params.__dict__)
+    logger = utils.ResultLogger(path=os.path.join(params.log_dir, '{}.jsonl'.format(params.desc)), **params.__dict__)   # save default params
 
     # --- load and prepare train data ---------------------------------------------------------------------------------
     data_train = {}
@@ -210,7 +212,7 @@ if __name__ == '__main__':
     elif params.dataset == "moviecorpus":
         dataset = datasets.MovieCorpus(params=params)
         data_train['x'], data_train['m'], data_train['y'], \
-            data_eval['x'], data_eval['m'], data_eval['y'] = dataset.prepare_moviecorpus(idx=0,
+            data_eval['x'], data_eval['m'], data_eval['y'] = dataset.prepare_moviecorpus(idx=0,     # more like load "or" prepare train data, because this fn is called again during train
                                                                                          test=params.eval_best_params)
         data_test['x'] = []
         data_test['m'] = []
@@ -226,7 +228,7 @@ if __name__ == '__main__':
         print("WARNING: Using the moviecorpus requires n_embd_d = 2, but is set to {}. It was automatically set to "
               "2! Please check your configuration!".format(params.clf_pipes))
         params.n_embd_d = 2
-    if params.n_acc_batch > 1 and params.n_batch_train % params.n_acc_batch != 0:   # ignore for now. Ask Fab again, but default = 1
+    if params.n_acc_batch > 1 and params.n_batch_train % params.n_acc_batch != 0:
         raise ValueError("Gradient accumulation active, due to n_acc_batch = {}. n_batch_train is {} which is not "
                          "divisible through n_acc_batch without rest, but must be!")
     elif params.n_acc_batch > 1:
@@ -234,17 +236,23 @@ if __name__ == '__main__':
         params.gradient_accumulation = True
     else:
         params.gradient_accumulation = False
+    if params.use_encoder:
+        params.n_enc_layer = 6  # to make this editable
 
     # --- generate model as tensorflow graph (train) ------------------------------------------------------------------
     print("Generating model ...")
-    transformer_decoder = model.TransformerDecoder(params=params)
-    X_train = tf.placeholder(tf.int32, [None, params.clf_pipes, params.n_ctx, params.n_embd_d+1])
+    transformer_decoder = model.Transformer(params=params)
+    if params.use_encoder is False:     # original decoder model
+        X_train = tf.placeholder(tf.int32, [None, params.clf_pipes, params.n_ctx, params.n_embd_d+1])
+    else:   # with encoder-decoder model
+        X_train = tf.placeholder(tf.int32, [None, 2, params.clf_pipes, params.n_ctx, params.n_embd_d + 1])
     M_train = tf.placeholder(tf.float32, [None, params.clf_pipes, params.n_ctx])
     Y_train = tf.placeholder(tf.int32, [None])
 
     # returns the result from all four (two in my case) gpus after the training and loss calculated (gradient descent also performed)
-    # Just define and add the node, not actually perform train. Actual training is performed in the train loop below
-    result = transformer_decoder.mgpu_train(X_train, M_train, Y_train)
+    # This just defines and adds the node, not perform actual training. Training is performed in the train loop below
+    result = transformer_decoder.mgpu_train(X_train, M_train, Y_train, use_encoder=params.use_encoder)
+
     train_step = result[0]
     accumulation_step = result[1]       # None for rocstories   # operation to store the average of the grads from each gpu into a non-trainable tf.Variable of shape tvars
     accumulation_init_step = result[2]  # None for rocstories   # operation to create and assign 0s into a non-trainable tf.Variable of shape tvars
@@ -266,12 +274,13 @@ if __name__ == '__main__':
 
     # --- load pretrained parameter -----------------------------------------------------------------------------------
     print("Loading pretrained parameter ...")
-    transformer_decoder.init_and_load_parameter_from_file(sess=sess, path="model/")
+    transformer_decoder.init_and_load_parameter_from_file(sess=sess, path="model/", use_encoder=params.use_encoder)
 
     # --- add evaluation nodes to tensorflow graph --------------------------------------------------------------------
     # Just add the node, not actually perform eval. Eval is performed in iter_apply,iter_predict
     # perform training but this time turn off dropout???
-    eval_mgpu_result = transformer_decoder.mgpu_predict(X_train, M_train, Y_train)  # returns the losses but not grads since only evaluating
+    # eval_mgpu_result: returns the losses but not grads since only evaluating
+    eval_mgpu_result = transformer_decoder.mgpu_predict(X_train, M_train, Y_train, use_encoder=params.use_encoder)
     if params.head_type == "clf":
         eval_mgpu_logits = eval_mgpu_result[0]
         eval_mgpu_clf_losses = eval_mgpu_result[1]
@@ -284,11 +293,17 @@ if __name__ == '__main__':
     else:
         raise ValueError("Not a valid head_type!")
 
-    # This is necessary for the remaining batch that doesn't fit the batch_size (i.e for the remainder of X.length % n_batch_train != 0)
-    X = tf.placeholder(tf.int32, [None, params.clf_pipes, params.n_ctx, params.n_embd_d+1])
+    """
+    This is necessary for the remaining batch that doesn't fit the batch_size (i.e for the remainder of X.length % n_batch_train != 0)
+    So call model() directly, since no need to divide among the gpus, just use one gpu i guess
+    """
+    if params.use_encoder is False:     # original decoder model
+        X = tf.placeholder(tf.int32, [None, params.clf_pipes, params.n_ctx, params.n_embd_d+1])
+    else:   # encoder-decoder model
+        X = tf.placeholder(tf.int32, [None, 2, params.clf_pipes, params.n_ctx, params.n_embd_d + 1])
     M = tf.placeholder(tf.float32, [None, params.clf_pipes, params.n_ctx])
     Y = tf.placeholder(tf.int32, [None])
-    eval_result = transformer_decoder.model(X, M, Y, train=False, reuse=True)   # so no need to divide among the gpus, just use one gpu i guess
+    eval_result = transformer_decoder.model(X, M, Y, train=False, reuse=True, use_encoder=params.use_encoder)
     eval_clf_logits = eval_result[0]
     eval_lm_logits = eval_result[1]
     eval_clf_losses = eval_result[2]
@@ -325,27 +340,84 @@ if __name__ == '__main__':
 
         if params.gradient_accumulation:    # False for rocstories
             sess.run(accumulation_init_step)    # operation to create and assign 0s into a non-trainable tf.Variable of shape tvars
-        for x_batch, m_batch, y_batch in utils.iter_data(*skl_utils.shuffle(data_train['x'],    # iter_data: Basically seperate the data into batches
+
+        """
+        skl_utils.shuffle: Shuffle arrays or sparse matrices in a consistent way, so data_trains: ['x'], ['m'], ['y']
+                            would always be arranged in the right order  
+                            
+        A - For rocstories with n_batch_train = 16, gradient_acc = False, so n_acc_batch = 1;
+            at each for-loop, since 1497 /16 = 93.3, perform 93 operations on the data each of size 16, 
+            (Note: since iter_data is actually a list of these 93 separated different input data)
+            
+        - iter_data performs a yield(d[i : i+n_batch)) for X, M, and Y, Now n_batch = n_batch_train = 16
+        - iter_data: Basically separate the data into batches list (so for train: have a total of (1497 / 16) = 93.xx)
+        - so train batch i: [16, 32, ..., 1488, (1489 - 1497)] (total length = 94)
+        - meaning the for-loop would be:
+            - at current_batch 0, data[0:15]
+            - at current_batch 1, data[16:31]
+            - ...
+            - at current_batch 92, data[1472:1488]
+            - at current_batch 93, data[1489:1497]
+            
+            
+        B - For moviecorpus with gradient_acc = true, n_gpu = 2, n_batch=8 (so total batch size actually 2*8=16), 
+            n_acc_batch=4, n_batch_train = 16/4 = 4. 
+            
+        - iter_data performs a yield(d[i : i+n_batch)) for X, M, and Y. Now n_batch = n_batch_train = 4
+            But since it is shared among two gpus during training, actually = 2
+        - iter_data: Basically separate the data into batches list (so for train: have a total of (69799 / 4) = 17499.xx)
+            But since using across 2 gpus: total after one loop: 34,899 operations
+        - so train batch i: [4, 8, ..., 69796, (69797 - 69799)] (total length = 17500)
+        - meaning the for-loop would be:
+            - at current_batch 0, x_batch: data[0:3]
+            - at current_batch 1, x_batch: data[3:7]
+            - ...
+            - at current_batch 17448, x_batch: data[69791:69795]
+            - at current_batch 17449, x_batch: data[69795:69799]    # last 3 batches  
+        """
+        for current_batch, x_batch, m_batch, y_batch in enumerate(utils.iter_data(*skl_utils.shuffle(data_train['x'],
                                                                             data_train['m'],
                                                                             data_train['y'],
                                                                             random_state=np.random),
                                                          n_batch=params.n_batch_train,
                                                          truncate=True,
-                                                         verbose=True):
+                                                         verbose=True)):
+            """
+            if grad_acc:
+                - if equal: after running through the num of grad_acc iteration steps, create a new non-trainable tf.Var 
+                        and then perform grad calculation and assignment to it
+                - run(train_step): perform grad update
+                - run(acc_init_step): clear the tvars after gradient update
+                - run(acc_step): operation to calc and store the average of the grads from each gpu into a non-trainable
+                                tf.Variable of shape tvars
+
+            else:
+                - run: calc loss directly if we aren't accumulating gradients and also perform train step (grad desc)
+                - x_batch: shape (for train): [16, 2, 77, 2]     # first 2: x12 and x13 input
+
+            step + 1: step is increased after each loss calculated regardless of batch or epoch being run 
+                        (For rocstories: so after every 16 input sequence, step += 1)
+            
+            log()_1: only perform internal eval on first epoch (important epoch since gradient update changing faster) 
+                    (For moviecorpus. rocstories corpus not that big)
+            log()_2: perform eval after each epoch
+            """
             if params.gradient_accumulation:
-                if step % params.n_acc_batch == params.n_acc_batch - 1:     # after running through the num of grad_acc iteration steps, create a new non-trainable tf.Var and then perform grad calculation and assignment to it
+                if step % params.n_acc_batch == params.n_acc_batch - 1:
                     sess.run(train_step)
                     sess.run(accumulation_init_step)
-                sess.run(accumulation_step, {X_train: x_batch, M_train: m_batch, Y_train: y_batch})     # operation to calc and store the average of the grads from each gpu into a non-trainable tf.Variable of shape tvars
+                sess.run(accumulation_step, {X_train: x_batch, M_train: m_batch, Y_train: y_batch})
             else:
-                # if no grad_acc, directly calculate loss, and also perform train step (grad desc)
-                cost, _ = sess.run([loss, train_step], {X_train: x_batch, M_train: m_batch, Y_train: y_batch})  # run loss directly if we aren't accumulating gradients
+                cost, _ = sess.run([loss, train_step], {X_train: x_batch, M_train: m_batch, Y_train: y_batch})
             step += 1
 
             # perform evaluation after steps:
-            if (step in [1000, 2000, 5000]) and (epoch == 0):   # only perform internal eval on first epoch
+            if (step in [1000, 2000, 5000]) and (epoch == 0):
                 log(epoch=epoch, step=step)
-        log(epoch=epoch, step=step)     # perform eval after each epoch
+            print("-------- May be wrong format ------- Batch {0}/{1} performed each across {2} gpus in Epoch {3} done".
+                  format(current_batch, params.n_batch_train, params.n_gpu, epoch))
+        log(epoch=epoch, step=step)
+        print("**************** Epoch {0}/{1} done".format(epoch, params.n_iter))
 
     # After training, if submit, save trainable variables, and then perform prediction
     if params.submit:       # (CHECK THE WEBPAGE FOR THE DEFAULT PARAMS FOR ROCSTORIES)
