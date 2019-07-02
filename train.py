@@ -31,6 +31,7 @@ LABEL_DECODERS = {
 
 LOSS_ONLY = False
 
+
 # --- functions -------------------------------------------------------------------------------------------------------
 def log(epoch, step):
     params.n_valid = 300
@@ -132,124 +133,6 @@ def iter_predict(Xs, Ms):
             logits.append(sess.run(eval_logits, {X: xmb, M: mmb}))
     logits = np.concatenate(logits, 0)      # logits: the result from the last layer
     return logits
-
-'''
-EVAL_FNS = {
-    'lm_ppl': lambda x: compute_lm_ce(x),
-    'clf_acc': lambda x: compute_clf_acc(x)
-}
-
-
-def compute_lm_ce(res):
-    """ Returns the sum of the cross-entropy values and the number of values.
-
-    The function ignores values = 1.0
-    This is due to wrong utterances (which have 0-masks).
-    """
-    sum = 0
-    n_values = 0
-    for value in res.tolist():
-        if value != 1.0:
-            sum += value
-            n_values += 1
-    return sum, n_values
-
-
-def compute_clf_acc(res):
-    """ Computes the sum of the values and the number of values. """
-    sum = 0
-    res_as_list = res.tolist()
-    for value in res_as_list:
-        sum += value
-    return sum, len(res_as_list)
-
-
-# --- functions -------------------------------------------------------------------------------------------------------
-def log(epoch, step):
-    """ Computes metrics and updates best params.
-    """
-    global best_score
-
-    # --- compute metrics on train and eval set ---
-    metrics_train = compute_metrics(data_train['x'][:params.n_valid],
-                                    data_train['m'][:params.n_valid],
-                                    data_train['y'][:params.n_valid])
-    metrics_eval = compute_metrics(data_eval['x'], data_eval['m'], data_eval['y'])
-
-    # --- compute mean values (and prepare for print) ---
-    values_to_print = []
-    for metrics, label in zip([metrics_train, metrics_eval], ["tr", "va"]):
-        for metric, values in metrics.items():
-            value = values['val'] / values['num']
-            values_to_print.append({"name": label + "_" + metric, "value": value})
-
-    # --- print ---
-    string = "epoch: {} step: {}".format(epoch, step)
-    for value in values_to_print:
-        string += " {}: {}".format(value["name"], round(value["value"], 2))
-    print(string)
-
-    # --- update best params if needed ---
-    if params.submit:
-        if params.best_epoch_criteria == "clf":
-            score = metrics_eval['clf_acc']['val'] / metrics_eval['clf_acc']['num']
-        elif params.best_epoch_criteria == "lm":
-            score = metrics_eval['lm_ppl']['val'] / metrics_eval['lm_ppl']['num']
-        else:
-            raise Exception("")
-        if score > best_score:
-            best_score = score
-            save(os.path.join(params.save_dir, params.desc, 'best_params.jl'))
-
-
-def compute_metrics(Xs, Ms, Ys):
-    """ Dynamically computes metrics.
-
-    Available metrics:
-        language modeling loss (cross-entropy)
-        classification loss (accuracy)
-
-    Returns:
-        A dict.     The results. Description to be done.
-    """
-    # --- compute available metrics ---
-    available_metrics = ["lm_ppl"]
-    if params.head_type == "clf":
-        available_metrics.append("clf_acc")
-
-    # --- lookup corresponding tensors ---
-    tensors_mgpu = []
-    tensors_single = []
-    for metric in available_metrics:
-        if "lm" in metric:
-            tensors_mgpu.append(eval_mgpu_lm_losses)
-            tensors_single.append(eval_lm_losses)
-        elif "clf" in metric:
-            tensors_mgpu.append(eval_mgpu_clf_losses)
-            tensors_single.append(eval_clf_losses)
-
-    # --- compute metrics ---
-    results_summed = {}
-    for xmb, mmb, ymb in utils.iter_data(Xs, Ms, Ys, n_batch=params.n_batch_train, truncate=False, verbose=True):
-        n = len(xmb)
-        if n == params.n_batch_train:
-            results = sess.run(tensors_mgpu, {X_train: xmb, M_train: mmb, Y_train: ymb})
-        else:
-            results = sess.run(tensors_single, {X: xmb, M: mmb, Y: ymb})
-
-        for res, metric in zip(results, available_metrics):
-            val, num = EVAL_FNS[metric](res)
-            if metric in results_summed:
-                results_summed[metric]["val"] += val
-                results_summed[metric]["num"] += num
-            else:
-                results_summed[metric] = {
-                    "val": val,
-                    "num": num
-                }
-
-    return results_summed
-'''
 
 
 def predict():
