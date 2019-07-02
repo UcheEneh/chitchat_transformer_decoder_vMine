@@ -343,6 +343,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_encoder', action='store_true')   # default = False, but if put in the terminal, = True
     # n_data_to_use = 1: full data, 2: half, 3: one-third of full data
     parser.add_argument('--n_data_to_use', type=int, default=defaults['n_data_to_use'])
+    parser.add_argument('--n_enc_layer', type=int, default=defaults['n_enc_layer'])
     params = parser.parse_args()
     print(params)
 
@@ -394,9 +395,12 @@ if __name__ == '__main__':
         params.gradient_accumulation = True
     else:
         params.gradient_accumulation = False
+
+    """
     if params.use_encoder:
         params.n_enc_layer = 4      # reduce encoder and decoder layer sizes
         params.n_layer = 8
+    """
 
     # --- generate model as tensorflow graph (train) ------------------------------------------------------------------
     print("Generating model ...")
