@@ -77,7 +77,7 @@ def log(epoch, step):
     # Store the accuracy or perplexity values and print
     logger.log(n_epochs=epoch, n_updates=step, tr_cost=tr_cost,
                va_cost=va_cost, tr_acc=tr_acc, va_acc=va_acc)
-    print('epoch: %d step: %d tr_cost: %.3f va_cost: %.3f tr_metr: %.2f va_metr: %.2f' % (epoch, step, tr_cost,
+    print('\n epoch: %d step: %d tr_cost: %.3f va_cost: %.3f tr_metr: %.2f va_metr: %.2f' % (epoch, step, tr_cost,
                                                                                           va_cost, tr_acc, va_acc))
     if params.submit:
         score = va_acc
@@ -541,7 +541,7 @@ if __name__ == '__main__':
         used_train_x = data_train['x'][:params.n_data_to_use]
         used_train_m = data_train['m'][:params.n_data_to_use]
         used_train_y = data_train['y'][:params.n_data_to_use]
-        print("{0}/{1} data samples used".format(len(used_train_x), len(data_train['x'])))
+        print("\n {0}/{1} data samples used".format(len(used_train_x), len(data_train['x'])))
 
         if params.gradient_accumulation:    # False for rocstories
             sess.run(accumulation_init_step)    # op to assign 0s to a non-trainable tf.Variable of shape tvars
@@ -622,7 +622,7 @@ if __name__ == '__main__':
             if (step in [100, 1000, 2000, 5000]) and (epoch == 0):
                 log(epoch=epoch, step=step)
         log(epoch=epoch, step=step)
-        print("**************** Epoch {0}/{1} done".format(epoch, params.n_iter))
+        print("\n **************** Epoch {0}/{1} done".format(epoch, params.n_iter))
 
     # After training, if submit, save trainable variables, and then perform prediction
     if params.submit:
