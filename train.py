@@ -31,17 +31,23 @@ LABEL_DECODERS = {
 
 LOSS_ONLY = False
 
-
 # --- functions -------------------------------------------------------------------------------------------------------
 def log(epoch, step):
     params.n_valid = 300
     global best_score
-    # iter_apply: returns only sum of losses if only_loss=True,
+    """
+    iter_apply: returns only sum of losses if only_loss=True
+    tr_cost: performs loss calculation only on n_valid: (374) input data
+    va_cost: performs loss calculation only on validation data (which is also of size: n_valid: 374)
+    
+    tr_acc: compare label and argmax of logits outputs for (x12, x13) along axis 1 to tell how many were predicted right
+    """
+    #
     if LOSS_ONLY:
-        tr_cost = iter_apply(data_train['x'][:params.n_valid],      # performs loss calculation only on n_valid: (374) input data
+        tr_cost = iter_apply(data_train['x'][:params.n_valid],
                                         data_train['m'][:params.n_valid],
                                         data_train['y'][:params.n_valid])
-        va_cost = iter_apply(data_eval['x'], data_eval['m'], data_eval['y'])    # performs loss calculation only on validation data (which is also of size: n_valid: 374)
+        va_cost = iter_apply(data_eval['x'], data_eval['m'], data_eval['y'])
     else:   # else returns [concatenated logits, and sum of the losses]
         tr_logits, tr_cost = iter_apply(data_train['x'][:params.n_valid],
                                         data_train['m'][:params.n_valid],
@@ -53,7 +59,7 @@ def log(epoch, step):
     va_cost = va_cost/params.n_valid
     if params.head_type == "clf":   # logits necessary for clf so we can see the diff btw logits output and actual label
         # accuracy
-        tr_acc = skl_metrics.accuracy_score(data_train['y'][:params.n_valid], np.argmax(tr_logits, 1))*100.     # compare between label and argmax of the logits outputs for (x12, x13) along axis 1 to tell how many were predicted right
+        tr_acc = skl_metrics.accuracy_score(data_train['y'][:params.n_valid], np.argmax(tr_logits, 1))*100.
         va_acc = skl_metrics.accuracy_score(data_eval['y'], np.argmax(va_logits, 1))*100.
     elif params.head_type == "lm":
         # perplexity
@@ -70,25 +76,44 @@ def log(epoch, step):
         score = va_acc
         if score > best_score:
             best_score = score
-            save(os.path.join(params.save_dir, params.desc, 'best_params.jl'))  # save trainable values for best score into /params.desc = 'rocstories'
+            # save trainable values for best score into /params.desc = 'rocstories'
+            save(os.path.join(params.save_dir, params.desc, 'best_params.jl'))
 
 
 # apply batch divided data to 4 (or 2) gpus, and the remainder to just one gpu (i guess)
 def iter_apply(Xs, Ms, Ys, only_loss=True):
     fns = [lambda x:np.concatenate(x, 0), lambda x:float(np.sum(x))]
     results = []
-    for xmb, mmb, ymb in utils.iter_data(Xs, Ms, Ys, n_batch=params.n_batch_train, truncate=False, verbose=True):   # iter_data divides the input, mask and label data into batches of size: n_batch_train (takes care of fitting input size to batch size)
-        n = len(xmb)        # for eval, n_batch = 16; xmb: for each for-loop: data[h:h+n_batch] for h in [0, 16, 32, ..., 367, (368 - 374)
-        if n == params.n_batch_train:   # divide the batch into no of gpu and get the logits and loss from all 4 (or 2 in my case) gpus
-            # logits: the result from the last layer, loss: the difference between this result and label
+    """
+    iter_data: divides the input, mask and label data into batches of size: n_batch_train 
+                (takes care of fitting input size to batch size)
+    for evaluation, n_batch = 16; xmb: for each for-loop: data[h:h+n_batch] for h in [0, 16, 32, ..., 367, (368 - 374)
+    
+    logits: the result from the last layer, loss: the difference between this result and label
+    
+    if: divide the batch into no of gpu and get the logits and loss from all 4 (or 2 in my case) gpus
+    xmb: shape (for eval): [16, 2, 77, 2]. first 2: x12 and x13 input
+    
+    else: for the last for-loop []i.e between (368 - 374) (last batch were Xs.length % n_batch_train != 0)
+    
+    res[1]*n: [loss*n]. multiplied by n to calc the average loss across each batch_size later 
+            (since last batch has diff size)
+    [r*n for r in res]: [logits*n, loss*n]. logits shape [16, 2] telling us the result from comparing x12 and x13 in 
+                        this batch of size 16
+    """
+
+    for xmb, mmb, ymb in utils.iter_data(Xs, Ms, Ys, n_batch=params.n_batch_train, truncate=False, verbose=True):
+        n = len(xmb)
+        if n == params.n_batch_train:
+
             res = sess.run([eval_mgpu_logits, eval_mgpu_loss],
-                           {X_train: xmb, M_train: mmb, Y_train: ymb})          # xmb: shape (for eval): [16, 2, 77, 2]     # first 2: x12 and x13 input
-        else:   # for the last for-loop []i.e between (368 - 374) (last batch were Xs.length % n_batch_train != 0)
+                           {X_train: xmb, M_train: mmb, Y_train: ymb})
+        else:
             res = sess.run([eval_logits, eval_loss], {X: xmb, M: mmb, Y: ymb})
         if only_loss:
-            res = res[1] * n            # [loss*n]  (multiplied by n to calc the average loss across each batch_size later (since last batch has diff size) )
-        else:                                                       # logits: the result from the last layer, loss: the difference between this result and label
-            res = [r*n for r in res]    # [logits*n, loss*n]        # logits: shape [16, 2] telling us the result from comparing x12 and x13 in this batch of size 16
+            res = res[1] * n
+        else:
+            res = [r*n for r in res]
         results.append(res)
     if only_loss:
         return np.sum(results)      # return only the sum of losses
@@ -107,6 +132,124 @@ def iter_predict(Xs, Ms):
             logits.append(sess.run(eval_logits, {X: xmb, M: mmb}))
     logits = np.concatenate(logits, 0)      # logits: the result from the last layer
     return logits
+
+'''
+EVAL_FNS = {
+    'lm_ppl': lambda x: compute_lm_ce(x),
+    'clf_acc': lambda x: compute_clf_acc(x)
+}
+
+
+def compute_lm_ce(res):
+    """ Returns the sum of the cross-entropy values and the number of values.
+
+    The function ignores values = 1.0
+    This is due to wrong utterances (which have 0-masks).
+    """
+    sum = 0
+    n_values = 0
+    for value in res.tolist():
+        if value != 1.0:
+            sum += value
+            n_values += 1
+    return sum, n_values
+
+
+def compute_clf_acc(res):
+    """ Computes the sum of the values and the number of values. """
+    sum = 0
+    res_as_list = res.tolist()
+    for value in res_as_list:
+        sum += value
+    return sum, len(res_as_list)
+
+
+# --- functions -------------------------------------------------------------------------------------------------------
+def log(epoch, step):
+    """ Computes metrics and updates best params.
+    """
+    global best_score
+
+    # --- compute metrics on train and eval set ---
+    metrics_train = compute_metrics(data_train['x'][:params.n_valid],
+                                    data_train['m'][:params.n_valid],
+                                    data_train['y'][:params.n_valid])
+    metrics_eval = compute_metrics(data_eval['x'], data_eval['m'], data_eval['y'])
+
+    # --- compute mean values (and prepare for print) ---
+    values_to_print = []
+    for metrics, label in zip([metrics_train, metrics_eval], ["tr", "va"]):
+        for metric, values in metrics.items():
+            value = values['val'] / values['num']
+            values_to_print.append({"name": label + "_" + metric, "value": value})
+
+    # --- print ---
+    string = "epoch: {} step: {}".format(epoch, step)
+    for value in values_to_print:
+        string += " {}: {}".format(value["name"], round(value["value"], 2))
+    print(string)
+
+    # --- update best params if needed ---
+    if params.submit:
+        if params.best_epoch_criteria == "clf":
+            score = metrics_eval['clf_acc']['val'] / metrics_eval['clf_acc']['num']
+        elif params.best_epoch_criteria == "lm":
+            score = metrics_eval['lm_ppl']['val'] / metrics_eval['lm_ppl']['num']
+        else:
+            raise Exception("")
+        if score > best_score:
+            best_score = score
+            save(os.path.join(params.save_dir, params.desc, 'best_params.jl'))
+
+
+def compute_metrics(Xs, Ms, Ys):
+    """ Dynamically computes metrics.
+
+    Available metrics:
+        language modeling loss (cross-entropy)
+        classification loss (accuracy)
+
+    Returns:
+        A dict.     The results. Description to be done.
+    """
+    # --- compute available metrics ---
+    available_metrics = ["lm_ppl"]
+    if params.head_type == "clf":
+        available_metrics.append("clf_acc")
+
+    # --- lookup corresponding tensors ---
+    tensors_mgpu = []
+    tensors_single = []
+    for metric in available_metrics:
+        if "lm" in metric:
+            tensors_mgpu.append(eval_mgpu_lm_losses)
+            tensors_single.append(eval_lm_losses)
+        elif "clf" in metric:
+            tensors_mgpu.append(eval_mgpu_clf_losses)
+            tensors_single.append(eval_clf_losses)
+
+    # --- compute metrics ---
+    results_summed = {}
+    for xmb, mmb, ymb in utils.iter_data(Xs, Ms, Ys, n_batch=params.n_batch_train, truncate=False, verbose=True):
+        n = len(xmb)
+        if n == params.n_batch_train:
+            results = sess.run(tensors_mgpu, {X_train: xmb, M_train: mmb, Y_train: ymb})
+        else:
+            results = sess.run(tensors_single, {X: xmb, M: mmb, Y: ymb})
+
+        for res, metric in zip(results, available_metrics):
+            val, num = EVAL_FNS[metric](res)
+            if metric in results_summed:
+                results_summed[metric]["val"] += val
+                results_summed[metric]["num"] += num
+            else:
+                results_summed[metric] = {
+                    "val": val,
+                    "num": num
+                }
+
+    return results_summed
+'''
 
 
 def predict():
@@ -150,7 +293,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', type=str, default=defaults['save_dir'])
     parser.add_argument('--data_dir', type=str, default=defaults['data_dir'])
     parser.add_argument('--submission_dir', type=str, default=defaults['submission_dir'])
-    parser.add_argument('--submit', action='store_true')    # default = False, but if put in the terminal call, becomes True
+    parser.add_argument('--submit', action='store_true')    # default = False, but if put in the terminal call, = True
     parser.add_argument('--analysis', action='store_true')
     parser.add_argument('--seed', type=int, default=defaults['seed'])
     parser.add_argument('--n_iter', type=int, default=defaults['n_iter'])
@@ -188,7 +331,7 @@ if __name__ == '__main__':
     parser.add_argument('--e', type=float, default=defaults['e'])
     parser.add_argument('--eval_best_params', action='store_true')
     parser.add_argument('--dict_error_fix', type=bool, default=defaults['dict_error_fix'])
-    parser.add_argument('--use_encoder', action='store_true')   # default = False, but if put in the terminal call, becomes True
+    parser.add_argument('--use_encoder', action='store_true')   # default = False, but if put in the terminal, = True
     params = parser.parse_args()
     print(params)
 
@@ -198,7 +341,8 @@ if __name__ == '__main__':
     tf.set_random_seed(params.seed)
 
     # --- logger ------------------------------------------------------------------------------------------------------
-    logger = utils.ResultLogger(path=os.path.join(params.log_dir, '{}.jsonl'.format(params.desc)), **params.__dict__)   # save default params
+    # save default params
+    logger = utils.ResultLogger(path=os.path.join(params.log_dir, '{}.jsonl'.format(params.desc)), **params.__dict__)
 
     # --- load and prepare train data ---------------------------------------------------------------------------------
     data_train = {}
@@ -211,9 +355,10 @@ if __name__ == '__main__':
             data_eval['x'], data_eval['m'], data_eval['y'], \
             data_test['x'], data_test['m'] = dataset.prepare_rocstories()
     elif params.dataset == "moviecorpus":
+        # more like load "or" prepare train data, because this fn is called again during train
         dataset = datasets.MovieCorpus(params=params)
         data_train['x'], data_train['m'], data_train['y'], \
-            data_eval['x'], data_eval['m'], data_eval['y'] = dataset.prepare_moviecorpus(idx=0,     # more like load "or" prepare train data, because this fn is called again during train
+            data_eval['x'], data_eval['m'], data_eval['y'] = dataset.prepare_moviecorpus(idx=0,
                                                                                          test=params.eval_best_params)
         data_test['x'] = []
         data_test['m'] = []
@@ -221,11 +366,12 @@ if __name__ == '__main__':
         raise Exception("{}-dataset is not implemented.".format(params.dataset))
 
     # --- check some parameter dependencies ---------------------------------------------------------------------------
-    if params.head_type == "lm" and params.clf_pipes != 1:      # for language modeling, we only want one output, while classification would need 2 since we are multi-tasking (both lm and clf)
+    # for lm, we only want one output, while classification would need 2 since we are multi-tasking (both lm and clf)
+    if params.head_type == "lm" and params.clf_pipes != 1:
         print("WARNING: Only using the language modeling architecture but clf_pipes is {}. clf_pipes is automatically "
               "set to 1! Please check your configuration!".format(params.clf_pipes))
         params.clf_pipes = 1
-    if params.dataset == "moviecorpus" and params.n_embd_d != 2:        # n_embd_d is set to 2 because for the movie corpus, we need to embed not just the position but also, the ... (ask Fabian)
+    if params.dataset == "moviecorpus" and params.n_embd_d != 2:
         print("WARNING: Using the moviecorpus requires n_embd_d = 2, but is set to {}. It was automatically set to "
               "2! Please check your configuration!".format(params.clf_pipes))
         params.n_embd_d = 2
@@ -250,13 +396,17 @@ if __name__ == '__main__':
     M_train = tf.placeholder(tf.float32, [None, params.clf_pipes, params.n_ctx])
     Y_train = tf.placeholder(tf.int32, [None])
 
-    # returns the result from all four (two in my case) gpus after the training and loss calculated (gradient descent also performed)
-    # This just defines and adds the node, not perform actual training. Training is performed in the train loop below
+    """
+    This just defines and adds the node, not perform actual training. Training is performed in the train loop below
+    - returns the result from all four (two) gpus after training and loss calculated (gradient descent also performed)
+    
+    accumulation_step: op to store the avg of the grads from each gpu into a non-trainable tf.Variable of shape tvars
+    accumulation_init_step: op to create and assign 0s into a non-trainable tf.Variable of shape tvars
+    """
     result = transformer_decoder.mgpu_train(X_train, M_train, Y_train, use_encoder=params.use_encoder)
-
     train_step = result[0]
-    accumulation_step = result[1]       # None for rocstories   # operation to store the average of the grads from each gpu into a non-trainable tf.Variable of shape tvars
-    accumulation_init_step = result[2]  # None for rocstories   # operation to create and assign 0s into a non-trainable tf.Variable of shape tvars
+    accumulation_step = result[1]       # None for rocstories
+    accumulation_init_step = result[2]  # None for rocstories
     if params.head_type == "clf":
         logits = result[3]      # shape: [?, 2] *Note: 2 for classifying the input as the right or wrong
         clf_loss = result[4]    # shape: [?]    * label - predicted_logit
@@ -271,7 +421,7 @@ if __name__ == '__main__':
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
     sess = tf.Session(config=config)
-    t_vars = utils.find_trainable_variables('model')    # contains the trainable variables from model for gradient descent
+    t_vars = utils.find_trainable_variables('model')    # contains the trainable variables from model for gradient desc
 
     # --- load pretrained parameter -----------------------------------------------------------------------------------
     print("Loading pretrained parameter ...")
@@ -282,6 +432,24 @@ if __name__ == '__main__':
     # perform training but this time turn off dropout???
     # eval_mgpu_result: returns the losses but not grads since only evaluating
     eval_mgpu_result = transformer_decoder.mgpu_predict(X_train, M_train, Y_train, use_encoder=params.use_encoder)
+
+    """
+    if params.head_type == "clf":
+        eval_mgpu_clf_logits = eval_mgpu_result[0]
+        eval_mgpu_clf_losses = eval_mgpu_result[1]
+        eval_mgpu_clf_loss = tf.reduce_mean(eval_mgpu_clf_losses)
+        eval_mpgu_lm_logits = None
+        eval_mgpu_lm_losses = eval_mgpu_result[2]
+        eval_mgpu_lm_loss = tf.reduce_mean(eval_mgpu_lm_losses)
+    elif params.head_type == "lm":
+        eval_mgpu_clf_logits = None
+        eval_mgpu_clf_losses = None
+        eval_mgpu_clf_loss = None
+        eval_mgpu_lm_logits = eval_mgpu_result[0]
+        eval_mgpu_lm_losses = eval_mgpu_result[1]
+        eval_mgpu_lm_loss = tf.reduce_mean(eval_mgpu_lm_losses)
+    """
+
     if params.head_type == "clf":
         eval_mgpu_logits = eval_mgpu_result[0]
         eval_mgpu_clf_losses = eval_mgpu_result[1]
@@ -309,6 +477,7 @@ if __name__ == '__main__':
     eval_lm_logits = eval_result[1]
     eval_clf_losses = eval_result[2]
     eval_lm_losses = eval_result[3]
+
     if params.head_type == "clf":
         eval_logits = eval_clf_logits
         eval_loss = tf.reduce_mean(eval_clf_losses)
@@ -317,13 +486,23 @@ if __name__ == '__main__':
         eval_loss = tf.reduce_mean(eval_lm_losses)
     else:
         raise ValueError("Not a valid head_type!")
+    """
+    eval_lm_loss = tf.reduce_mean(eval_lm_losses)
+    if params.head_type == "clf":
+        eval_clf_loss = tf.reduce_mean(eval_clf_losses)
+    else:
+        eval_clf_loss = None
+    """
+
     with open("params.pkl", 'wb') as f:
         pickle.dump(params, f)
 
     # --- eval best params and exit -----------------------------------------------------------------------------------
     if params.eval_best_params:
         transformer_decoder.load_checkpoint(sess=sess)
-        log(epoch=0, step=0)    # Perform loss and logits calc on train data of size (n_valid) and validation data. Store the accuracy (or perplexity) values and print to see the state of the model based on a new (validation) data
+        # Perform loss and logits calc on train data of size (n_valid) and validation data.
+        # Store the accuracy (or perplexity) vals and print to see the state of the model based on a new (validtn) data
+        log(epoch=0, step=0)
         sys.exit()
 
     # --- train loop --------------------------------------------------------------------------------------------------
@@ -340,7 +519,7 @@ if __name__ == '__main__':
                 params.n_batch_train = int(params.n_batch_train / params.n_acc_batch)
 
         if params.gradient_accumulation:    # False for rocstories
-            sess.run(accumulation_init_step)    # operation to create and assign 0s into a non-trainable tf.Variable of shape tvars
+            sess.run(accumulation_init_step)    # op to assign 0s to a non-trainable tf.Variable of shape tvars
 
         """
         skl_utils.shuffle: Shuffle arrays or sparse matrices in a consistent way, so data_trains: ['x'], ['m'], ['y']
@@ -377,12 +556,12 @@ if __name__ == '__main__':
             - at current_batch 17449, x_batch: data[69795:69799]    # last 3 batches  
         """
         for current_batch, x_batch, m_batch, y_batch in enumerate(utils.iter_data(*skl_utils.shuffle(data_train['x'],
-                                                                            data_train['m'],
-                                                                            data_train['y'],
-                                                                            random_state=np.random),
-                                                         n_batch=params.n_batch_train,
-                                                         truncate=True,
-                                                         verbose=True)):
+                                                                                             data_train['m'],
+                                                                                             data_train['y'],
+                                                                                             random_state=np.random),
+                                                                                  n_batch=params.n_batch_train,
+                                                                                  truncate=True,
+                                                                                  verbose=True)):
             """
             if grad_acc:
                 - if equal: after running through the num of grad_acc iteration steps, create a new non-trainable tf.Var 
@@ -415,14 +594,15 @@ if __name__ == '__main__':
             # perform evaluation after steps:
             if (step in [100, 1000, 2000, 5000]) and (epoch == 0):
                 log(epoch=epoch, step=step)
-            print("-------- May be wrong format ------- Batch {0}/{1} performed each across {2} gpus in Epoch {3} done".
-                  format(current_batch, params.n_batch_train, params.n_gpu, epoch))
+            print("-------- May be wrong format ------- Current mini-batch {0} in Batch {1} performed each across "
+                  "{2} gpus in Epoch {3} done".format(current_batch, params.n_batch_train, params.n_gpu, epoch))
         log(epoch=epoch, step=step)
         print("**************** Epoch {0}/{1} done".format(epoch, params.n_iter))
 
     # After training, if submit, save trainable variables, and then perform prediction
-    if params.submit:       # (CHECK THE WEBPAGE FOR THE DEFAULT PARAMS FOR ROCSTORIES)
-        sess.run([p.assign(ip) for p, ip in zip(t_vars, joblib.load(os.path.join(params.save_dir,       # store the trainable variables (for the we and the h_layer blocks) as params
+    if params.submit:
+        # store the trainable variables (for the we and the h_layer blocks) as params
+        sess.run([p.assign(ip) for p, ip in zip(t_vars, joblib.load(os.path.join(params.save_dir,
                                                                                  params.desc,
                                                                                  'best_params.jl')))])
         if params.dataset == "rocstories":

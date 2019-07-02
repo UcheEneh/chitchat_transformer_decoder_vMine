@@ -24,21 +24,6 @@ class MovieCorpus:
         self.params = params
         print("PARAMS:")
         print(self.params)
-        # self.delex_dict = {
-        #     'movie#0': '[w_movie]',
-        #     'actor#0': '[w_actor0]',
-        #     'actor#1': '[w_actor1]',
-        #     'actor#2': '[w_actor2]',
-        #     'director#0': '[w_director]',
-        #     'writer#0': '[w_writer]',
-        #     'year#0': '[w_year]',
-        #     'budget#0': '[w_budget]',
-        #     'certificate#0': '[w_certificate]',
-        #     'country#0': '[w_country]',
-        #     'genre#0': '[w_genre0]',
-        #     'genre#1': '[w_genre1]',
-        #     'end#t': '[end]',
-        # }
         self.delex_dict = OrderedDict([     # OrderedDict keeps it in the same order as it was put in
             ('movie#0', '[w_movie]'),
             ('actor#0', '[w_actor0]'),
@@ -54,16 +39,6 @@ class MovieCorpus:
             ('genre#1', '[w_genre1]'),
             ('end#t', '[end]'),
         ])
-
-        # self.fact_dict = {
-        #     'movie#0': '[pos_f_movie]',
-        #     'actor#0': '[pos_f_actor0]',
-        #     'actor#1': '[pos_f_actor1]',
-        #     'actor#2': '[pos_f_actor2]',
-        #     'director#0': '[pos_f_director]',
-        #     'writer#0': '[pos_f_writer]',
-        #     'plot': '[pos_f_plot]',
-        # }
         self.fact_dict = OrderedDict([
             ('movie#0', '[pos_f_movie]'),
             ('actor#0', '[pos_f_actor0]'),
@@ -93,19 +68,6 @@ class MovieCorpus:
                 'certificate#0': '[pos_a_certificate]',
             }
         else:
-            # self.attitude_dict = {
-            #     'movie#0': '[pos_a_movie]',
-            #     'actor#0': '[pos_a_actor0]',
-            #     'actor#1': '[pos_a_actor1]',
-            #     'actor#2': '[pos_a_actor2]',
-            #     'director#0': '[pos_a_director]',
-            #     'writer#0': '[pos_a_writer]',
-            #     'country#0': '[pos_a_country]',
-            #     'genre#0': '[pos_a_genre0]',
-            #     'genre#1': '[pos_a_genre1]',
-            #     'budget#0': '[pos_a_budget]',
-            #     'certificate#0': '[pos_a_certificate]',
-            # }
             self.attitude_dict = OrderedDict([
                 ('movie#0', '[pos_a_movie]'),
                 ('actor#0', '[pos_a_actor0]'),
@@ -130,7 +92,8 @@ class MovieCorpus:
         print("N Vocab:")
         print(self.params.n_vocab)
 
-        for key in self.delex_dict:     # create and include encoding for special words (movie#0, actor#0, actor#1, budget#0, ...)
+        # create and include encoding for special words (movie#0, actor#0, actor#1, budget#0, ...)
+        for key in self.delex_dict:
             self.encoder[self.delex_dict[key]] = len(self.encoder)      # '[w_movie]' = 40478, '[w_actor0]' = 40479, ...
 
         self.encoder['[start]'] = len(self.encoder)  # TODO: really needed?
@@ -138,27 +101,29 @@ class MovieCorpus:
         self.encoder['[classifier]'] = len(self.encoder)
         self.params.clf_token = self.encoder['[classifier]']
 
-        for i in range(6):      # create and include encoding for different kinds of attitudes
-            self.encoder['[att_{}]'.format(i)] = len(self.encoder)      # '[att_0]' = 40493:  (e.g. 0: strongly like, 5: strongly dislike)
+        # create and include encoding for different kinds of attitudes
+        # '[att_0]' = 40493:  (e.g. 0: strongly like, 5: strongly dislike)
+        for i in range(6):
+            self.encoder['[att_{}]'.format(i)] = len(self.encoder)
 
         for key in self.fact_dict:      # include position encoding for facts [pos_f_movie], [pos_f_actor0], ...
-            self.encoder[self.fact_dict[key]] = len(self.encoder)   # '[pos_f_movie]' = 40499
+            self.encoder[self.fact_dict[key]] = len(self.encoder)   # e.g. '[pos_f_movie]' = 40499
 
         for key in self.attitude_dict:      # include position encoding for attitudes [pos_a_movie], [pos_a_actor0], ...
             self.encoder[self.attitude_dict[key]] = len(self.encoder)
 
-        self.encoder['[pos_human]'] = len(self.encoder)     # include encoding for human speaker turn (person 1)    # 40517
-        self.encoder['[pos_bot]'] = len(self.encoder)       # include encoding for bot speaker turn (person 2)      # 40518
+        self.encoder['[pos_human]'] = len(self.encoder)    # 40517
+        self.encoder['[pos_bot]'] = len(self.encoder)      # 40518
 
         # kind of hacky, but works for the moment ...
         self.text_encoder.encoder = self.encoder
-        self.text_encoder.update_decoder()      # updates decoder for the bpe embeddings including the newly added embds
+        # updates decoder for the bpe embeddings including the newly added embds
+        self.text_encoder.update_decoder()
 
-        self.params.n_special = len(self.encoder) - num_of_words        # amount of extra embeddings added      # 41
-
+        self.params.n_special = len(self.encoder) - num_of_words        # amount of extra embeddings added = 41
         self.dialogues_src = []
 
-    def prepare_moviecorpus(self, idx=0, test=False):       # idx determines if we return for the odd (0) or even (1) epoch
+    def prepare_moviecorpus(self, idx=0, test=False):       # idx determines if return for the odd (0) or even (1) epoch
         # --- load data -----------------------------------------------------------------------------------------------
         if test:
             logfiles = glob.glob(os.path.join(self.params.data_dir, "moviecorpus/raw_test/*"))
@@ -196,9 +161,11 @@ class MovieCorpus:
             print("INFO: Loading prepared data.")
             if self.params.head_type == "clf":
                 # --- classifier data load ----------------------------------------------------------------------------
-                # For a fixed size of epochs, different "wrong utterances" are available. To load a specific
-                # set of data, use the "idx" parameter from this function.
-                # The last file is always the evaluation set, which is the same for every epoch.
+                """
+                For a fixed size of epochs, different "wrong utterances" are available. To load a specific
+                set of data, use the "idx" parameter from this function.
+                The last file is always the evaluation set, which is the same for every epoch.
+                """
                 with open(processed_files_path[idx], 'rb') as f:
                     data = pickle.load(f)
                 x_train = data['x_train']
@@ -268,7 +235,8 @@ class MovieCorpus:
         #     m_train = [m_train]
         #     y_train = [y_train]
 
-        # at this point, x_train is just one of the multiple in the original x_train list (i.e. the one selected for the epoch using the idx)
+        # at this point, x_train is just one of the multiple in the original x_train list
+        # (i.e. the one selected for the epoch using the idx)
         if self.params.use_encoder is False:
             self.params.n_ctx = x_train[0].shape[1]     # 511
         else:
@@ -282,7 +250,8 @@ class MovieCorpus:
 
         return x_train, m_train, y_train, x_eval, m_eval, y_eval
 
-    def postprocess(self, dialogues_src):       # dialogues_src contains all info from the logfiles in a list (i.e a list of dicts)
+    def postprocess(self, dialogues_src):
+        # dialogues_src contains all info from the logfiles in a list (i.e a list of dicts)
         # --- tokenizing and byte-pair encoding -----------------------------------------------------------------------
         x_dialogues = []        # input sequence
         t_dialogues = []
@@ -301,11 +270,16 @@ class MovieCorpus:
             attitudes = dialogue_src['attitudes']
             speaker_turns = len(dialogue) - 1
             if self.params.head_type == "clf":
-                self.process_dialogues(dialogue=dialogue, x=x_dialogues, t=t_dialogues, m=m_dialogues,      # For each utterance, create x, m, t, x_wr (x: list of utterances and history; m: mask for this list to diff. btwn speakers; t: embd of the speakers; x_wr: two wrong dialogue history for each utterance)
+                """
+                For each utterance, create x, m, t, x_wr (x: list of utterances and history; m: mask for this list to 
+                diff. btwn speakers; t: embd of the speakers; x_wr: two wrong dialogue history for each utterance)
+                """
+                self.process_dialogues(dialogue=dialogue, x=x_dialogues, t=t_dialogues, m=m_dialogues,
                                        x_wr=x_wr_dialogues, dialogue_src=dialogue_src)
             else:
                 self.process_dialogues(dialogue=dialogue, x=x_dialogues, t=t_dialogues, m=m_dialogues)
-            self.process_facts(facts=facts, speaker_turns=speaker_turns, x=x_facts, t=t_facts, b=b_facts)       # x_facts, x_attitudes, ... are deepcopied so the values after processing are returned
+            # x_facts, x_attitudes, ... are deepcopied so the values after processing are returned
+            self.process_facts(facts=facts, speaker_turns=speaker_turns, x=x_facts, t=t_facts, b=b_facts)
             self.process_attitudes(attitudes=attitudes, speaker_turns=speaker_turns, x=x_attitudes, t=t_attitudes)
             # if len(x_attitudes) > 500:
             #     stop = "here"
@@ -319,13 +293,13 @@ class MovieCorpus:
         for i, (d, f, a) in enumerate(zip(x_dialogues, x_facts, x_attitudes)):
             skip = False
             if self.params.head_type == "clf":
-                for d_wrong in x_wr_dialogues[i]:       # check if combination of wrong dialogues at index i is not too long
+                for d_wrong in x_wr_dialogues[i]:       # check if combination of wrong dialogues at index i is too long
                     this_length = len(d_wrong) + len(f) + len(a)
                     if this_length > self.params.n_ctx - 1:
                         idx_to_skip.append(i)
                         skip = True
                         continue
-                    elif this_length > max_length:      # check if the correct dialogue combination is not too long
+                    elif this_length > max_length:      # check if the correct dialogue combination is too long
                         max_length = this_length
             if skip:
                 continue
@@ -377,7 +351,7 @@ class MovieCorpus:
         # --- adapt to the tensorflow decoder model -------------------------------------------------------------------
         if self.params.use_encoder is False:
             if self.params.head_type == "clf":
-                x_train = []    # original should be of shape[2, 69799, clf_pipes, max_seq_length, 3] (first 2 for the diff epoch inputs)
+                x_train = []
                 m_train = []
                 y_train = []
                 wr_idx_ = 0
@@ -388,7 +362,7 @@ class MovieCorpus:
                                                     m_dialogues_train, b_facts_train, self.params.n_ctx,
                                                     x_wr_dialogues_train, wr_idx=wr_idx)
                     x_train.append(x)       # if clf_pipes = 2, then x: contains one right and one wrong dialogue
-                    m_train.append(m)       # Note that the index of the right and wrong dialogues would be different because it's chosen at random
+                    m_train.append(m)       # the index of right and wrong dials. would be diff since chosen at random
                     y_train.append(y)
                     wr_idx_ = wr_idx[-1] + 1
                 wr_idx = [x for x in range(self.params.clf_pipes - 1)]
@@ -405,7 +379,9 @@ class MovieCorpus:
                                                                m_dialogues_eval, b_facts_eval, self.params.n_ctx)
         else:   # version2 if encoder is used
             if self.params.head_type == "clf":
-                x_train = []    # now should be of shape[2, 69799, 2, clf_pipes, max_seq_length, 3] (second 2 for the encoder and decoder diff inputs)
+                # x_train now should be of shape[2, 69799, 2, clf_pipes, max_seq_length, 3]
+                # (second 2 for the encoder and decoder diff inputs)
+                x_train = []
                 m_train = []
                 y_train = []
                 wr_idx_ = 0
@@ -417,7 +393,7 @@ class MovieCorpus:
                                                        x_wr_dialogues_train, wr_idx=wr_idx)
 
                     x_train.append(x)       # if clf_pipes = 2, then x: contains one right and one wrong dialogue
-                    m_train.append(m)       # Note that the index of the right and wrong dialogues would be different because it's chosen at random
+                    m_train.append(m)       # the index of right and wrong dials. would be diff since chosen at random
                     y_train.append(y)
                     wr_idx_ = wr_idx[-1] + 1
                 wr_idx = [x for x in range(self.params.clf_pipes - 1)]
@@ -442,7 +418,8 @@ class MovieCorpus:
                          t_attitudes, m_dialogues, b_facts, max_length, x_wr_dialogues=None, wr_idx=[0]):
         """ Generates one big array for masks and tokens. """
         num_of_samples = len(x_dialogues)           # clf_pipes: if 2: generate just one wrong dialogue
-        x = np.zeros([num_of_samples, self.params.clf_pipes, max_length, 3], dtype=np.int32)    # last 3 for encoding (token, pos, type/context (i.e. if it's a dialogue or fact / attitude))
+        # x: last 3 for encoding (token, pos, type/context (i.e. if it's a dialogue or fact / attitude))
+        x = np.zeros([num_of_samples, self.params.clf_pipes, max_length, 3], dtype=np.int32)
         m = np.zeros([num_of_samples, self.params.clf_pipes, max_length], dtype=np.int32)
         y = np.zeros([num_of_samples], dtype=np.int32)
 
@@ -453,11 +430,14 @@ class MovieCorpus:
             x_wr = None
             if x_wr_dialogues is not None:
                 wd = wd + [self.encoder['[classifier]']]    # 40492
-                td = td + [td[-1]]      # one more of the last context is added for classifier index (i.e. if last speaker was human, then extra 40515 is added and vice versa)
+                # one more of the last context is added for classifier index
+                # (i.e. if last speaker was human, then extra 40515 is added and vice versa)
+                td = td + [td[-1]]
                 # x_wr = x_wr_dialogues[i][wr_idx] + [self.encoder['[classifier]']]
                 x_wr = []
                 for idx in wr_idx:
-                    x_wr.append(x_wr_dialogues[i][idx] + [self.encoder['[classifier]']])    # append two wrong dialogues using the index wr_idx
+                    # append wrong dials. using index wr_idx
+                    x_wr.append(x_wr_dialogues[i][idx] + [self.encoder['[classifier]']])
                 m_ = m_ + [1]   # add 1 to the end for masking the classifier token
             w_concat = wf + wa + wd     # facts, attitudes, dialogue (with history)
             t_concat = tf + ta + td
@@ -479,48 +459,79 @@ class MovieCorpus:
                 x[i, 0, :w_length, 1] = t_concat
                 m[i, 0, fa_length:w_length] = m_
             else:
-                yi = int(np.random.rand() * self.params.clf_pipes)      # e.g. if yi = 2
-                y[i] = yi                                               # set the label as 2 (i.e. the correct dialogue position in final x below)
-                yi_s = [(yi + 1 + x) % self.params.clf_pipes for x in range(self.params.clf_pipes - 1)]     # create the remaining 2 positions for putting the wrong dialogue [0, 1], since 2 is to be used for the right dialogue
-                w_concat_wr = [wf + wa + x_wr[idx] for idx in range(len(x_wr))]     # create two lists each containing a concat. of fact, att, one wrong dialogue of index idx
-                w_length_wr = [len(w_concat_wr[idx]) for idx in range(len(x_wr))]   # list of length of concatd wrong dialogues and facts, att.
+                """
+                e.g. if yi = 2, set the label as 2 (i.e. the correct dialogue position in final x below)
+                yi_s: create the other positions for the wrong dial. [0, 1], since 2 is to be used for the right dial.
+                w_concat_wr: create two lists each containing a concat. of fact, att, one wrong dialogue of index idx
+                w_length_wr: list of length of concatd wrong dialogues and facts, att.
+                """
+                yi = int(np.random.rand() * self.params.clf_pipes)
+                y[i] = yi
+                yi_s = [(yi + 1 + x) % self.params.clf_pipes for x in range(self.params.clf_pipes - 1)]
+                w_concat_wr = [wf + wa + x_wr[idx] for idx in range(len(x_wr))]
+                w_length_wr = [len(w_concat_wr[idx]) for idx in range(len(x_wr))]
                 t_concat_wr = []
-                for idx in range(len(x_wr)):    # get context for the wrong dialogues. Arrange the last context / type accordingn to its length in x_wr
-                    if len(wd) <= len(x_wr[idx]):   # if the normal/right dialogue is shorter than or equal to the current wrong dialogue, append the last context (in this case, td: human or bot) till it fills up the list
+
+                """
+                for-loop_1: get context for the wrong dialogues. Arrange last context/type according to its len in x_wr
+                if: the normal/right dialogue is shorter than or equal to the current wrong dialogue, append the last 
+                    context (in this case, td: human or bot) till it fills up the list
+                else if: the normal/right dial. is longer than the current wrong dial., cut at the appropriate position
+                x[i, ...]_1: put in the right concat seq of facts, att, dialogue at position 0 for current dial index i
+                x[i, ...]_2: put in the right concat of the context/type of the above concat at position 1
+                m[i, ...]: put in mask of the dialogue starting from after the facts and att, so every other thing 
+                            except the last utt., but including facts and att, would be 0
+                            
+                for-loop_2: put in the wrong dialogues at the remain 2 indexes in yi (got from yi_s calculated above)
+                x[i, ...]_1: so if the right dialogue is in x[i, 2, xx, 0], the two wrong dialogues would be 
+                                in x[i, 0, xx, 0] and x[i, 1, xx, 0]
+                x[i, ...]_1: put the context/type for the wrong dialogues
+                """
+                for idx in range(len(x_wr)):
+                    if len(wd) <= len(x_wr[idx]):
                         t_concat_wr.append(np.full([len(x_wr[idx])], td[-1]))
                         t_concat_wr[idx][:len(wd)] = td
-                    else:   # else if the normal/right dialouge is longer than the current wrong dialogue, then cut at the appropriate position
+                    else:
                         t_concat_wr.append(td[:len(x_wr[idx])])
-                x[i, yi, :w_length, 0] = w_concat   # put in the right concat seq of facts, att, dialogue at position 0 for the current dialogue index i
-                x[i, yi, :w_length, 1] = t_concat   # put in the right concat of the context/type of the above concat at position 1
-                m[i, yi, fa_length:w_length] = m_   # put in mask of the dialogue starting from after the facts and att, so every other thing except the last utt., but including facts and att, would be 0
-                for idx, yi_ in enumerate(yi_s):    # put in the wrong dialogues at the remain 2 indexes in yi (got from yi_s calculated above)
-                    x[i, yi_, :w_length_wr[idx], 0] = w_concat_wr[idx]      # so if the right dialogue is in x[i, 2, xx, 0], the two wrong dialogues would be in x[i, 0, xx, 0] and x[i, 1, xx, 0]
-                    x[i, yi_, :w_length_wr[idx], 1] = np.concatenate((tf, ta, t_concat_wr[idx]), axis=0)    # put the context/type for the wrong dialogues
+                x[i, yi, :w_length, 0] = w_concat
+                x[i, yi, :w_length, 1] = t_concat
+                m[i, yi, fa_length:w_length] = m_
+                for idx, yi_ in enumerate(yi_s):
+                    x[i, yi_, :w_length_wr[idx], 0] = w_concat_wr[idx]
+                    x[i, yi_, :w_length_wr[idx], 1] = np.concatenate((tf, ta, t_concat_wr[idx]), axis=0)
 
             # --- add positional embeddings ---------------------------------------------------------------------------
             # the order of facts and attitudes should not influence the result of our model. To ensure this,
             # we start with pos_emb_stt for every fact and attitude and iterate upon the next one.
             # starting with the facts:
+            """
+            bf: length of the facts for the last speaker in the current dialogue i
+            x[i, ..., 2]: create positional embeddings for the facts (if they are given for the last speaker) 
+                        (Note: positional embd is put in the last position 2)
+            """
             end = 0
-            for b in bf:    # bf: length of the facts for the last speaker in the current dialogue i
+            for b in bf:
                 sst = end
                 end = b
-                x[i, :, sst:end, 2] = np.arange(pos_emb_stt, pos_emb_stt + end - sst)   # create positional embeddings for the facts (if they are given for the last speaker) (Note: positional embd is put in the last position 2)
+                x[i, :, sst:end, 2] = np.arange(pos_emb_stt, pos_emb_stt + end - sst)
 
             # continuing with the attitudes ...
             sst = end
             end = sst + a_length
-            x[i, :, sst:end, 2] = np.full([a_length], pos_emb_stt)      # create positional embedding for attitudes (Ask Fab: why is it so: if there are both facts and attitudes, they would have similar values according to their position (i.e. first fact embd value = first att embd value)
+            x[i, :, sst:end, 2] = np.full([a_length], pos_emb_stt)      # create positional embedding for attitudes
 
             # and finally for the dialogue.
             # here we have to first compute the initial embedding
             if self.params.dynamic_pos_embeddings:      # initially True
-                poss_latest_start = 512 - d_length - 30  # TODO: Remove this hack       # assumption that the length of other embds beside the dialogue is approx 30? why not just use the length of the conctd sequence
-                pos_emb_stt_l = [np.random.randint(low=pos_emb_stt, high=pos_emb_stt + poss_latest_start)]  # calc the lastest possible start position for the right dialogues
+                # insteade of extra 30, why not only use the length of the conctd sequence (d_length)
+                poss_latest_start = 512 - d_length - 30  # TODO: Remove this hack
+                # calc the latest possible start position for the right dialogues
+                pos_emb_stt_l = [np.random.randint(low=pos_emb_stt, high=pos_emb_stt + poss_latest_start)]
                 if x_wr is not None:
-                    for idx in range(len(x_wr)):    # calc the lastest possible start position for the two wrong dialogues
-                        poss_latest_start = 512 - w_length_wr[idx] + 1  # TODO: Bug: w_length_wr is wrong length    # w_length_wr contains a list of the length of the two concats of the wrong dialogues, facts and attds
+                    for idx in range(len(x_wr)):
+                        # calc the lastest possible start position for the two wrong dialogues
+                        # w_length_wr contains a list of the len of the two concats of wrong dialogues, facts and attds
+                        poss_latest_start = 512 - w_length_wr[idx] + 1  # TODO: Bug: w_length_wr is wrong length
                         pos_emb_stt_l.append(np.random.randint(low=pos_emb_stt, high=pos_emb_stt + poss_latest_start))
             else:
                 if x_wr is None:
@@ -538,8 +549,12 @@ class MovieCorpus:
                 x[i, yi_, sst:end_wr, 2] = np.arange(pos_emb_stt_l[1], pos_emb_stt_l[1] + len(x_wr))
             else:
                 end_wrs = [sst + len(x_wr[idx]) for idx in range(len(x_wr))]
-                x[i, yi, sst:end, 2] = np.arange(pos_emb_stt_l[0], pos_emb_stt_l[0] + d_length)     # create positional embedding for the right dialogues at index yi
-                for idx, (end_wr, yi_) in enumerate(zip(end_wrs, yi_s)):                            # create positional embedding for the two wrong dialogues at indices yi_s
+                """
+                x[i,..]_1: create positional embedding for the right dialogues at index yi
+                x[i,..]_2: create positional embedding for the two wrong dialogues at indices yi_s
+                """
+                x[i, yi, sst:end, 2] = np.arange(pos_emb_stt_l[0], pos_emb_stt_l[0] + d_length)
+                for idx, (end_wr, yi_) in enumerate(zip(end_wrs, yi_s)):
                     x[i, yi_, sst:end_wr, 2] = np.arange(pos_emb_stt_l[idx + 1],
                                                          pos_emb_stt_l[idx + 1] + len(x_wr[idx]))
 
@@ -549,40 +564,34 @@ class MovieCorpus:
                          t_attitudes, m_dialogues, b_facts, max_length, x_wr_dialogues=None, wr_idx=[0]):
         """ Generates one big array for masks and tokens. """
 
-        # if use_encoder:
-            # gen_array = generate_ndarray_v2
-        # else:
-            # gen_array = generate_ndarray
-
+        """
+        separate [wf, wa] and [wd]
+        x: last 3 for encoding (token, pos, type/context (i.e. if it's a dialogue or fact / attitude))
+        y: no need for y in encoder since we aren't calc. loss directly
+        """
         num_of_samples = len(x_dialogues)
-        seperate_fa_d = 2     # separate [wf, wa] and [wd]
-
-        x = np.zeros([num_of_samples, seperate_fa_d, self.params.clf_pipes, max_length, 3], dtype=np.int32)    # last 3 for encoding (token, pos, type/context (i.e. if it's a dialogue or fact / attitude))
+        seperate_fa_d = 2
+        x = np.zeros([num_of_samples, seperate_fa_d, self.params.clf_pipes, max_length, 3], dtype=np.int32)
         m = np.zeros([num_of_samples, self.params.clf_pipes, max_length], dtype=np.int32)
-        y = np.zeros([num_of_samples], dtype=np.int32)      # no need for y in encoder since we aren't
-
-        """
-        x_fa = np.zeros([num_of_samples, self.params.clf_pipes, max_length, 3],
-                       dtype=np.int32)  # last 3 for encoding (token, pos, type/context (i.e. if it's a dialogue or fact / attitude))
-        m_fa = np.zeros([num_of_samples, self.params.clf_pipes, max_length], dtype=np.int32)
-        y_fa = np.zeros([num_of_samples], dtype=np.int32)
-
-        x_d = np.zeros([num_of_samples, self.params.clf_pipes, max_length, 3], dtype=np.int32)  # last 3 for encoding (token, pos, type/context (i.e. if it's a dialogue or fact / attitude))
-        m_d = np.zeros([num_of_samples, self.params.clf_pipes, max_length], dtype=np.int32)
-        y_d = np.zeros([num_of_samples], dtype=np.int32)
-        """
+        y = np.zeros([num_of_samples], dtype=np.int32)
 
         for i, (wd, td, wf, tf, wa, ta, m_, bf), in enumerate(zip(x_dialogues, t_dialogues, x_facts, t_facts,
                                                                   x_attitudes, t_attitudes, m_dialogues, b_facts)):
             # --- concatenate facts, attitudes and the dialogue both for the tokens (w) and the type-emb. (t) ---------
             x_wr = None
+            """
+            td: one more of the last context is added for classifier index 
+                    (i.e. if last speaker was human, then extra 40515 is added and vice versa)
+            for-loop:
+                x_wr.append: append two wrong dialogues using the index wr_idx
+            """
             if x_wr_dialogues is not None:
                 wd = wd + [self.encoder['[classifier]']]    # 40492
-                td = td + [td[-1]]      # one more of the last context is added for classifier index (i.e. if last speaker was human, then extra 40515 is added and vice versa)
+                td = td + [td[-1]]
                 # x_wr = x_wr_dialogues[i][wr_idx] + [self.encoder['[classifier]']]
                 x_wr = []
                 for idx in wr_idx:
-                    x_wr.append(x_wr_dialogues[i][idx] + [self.encoder['[classifier]']])    # append two wrong dialogues using the index wr_idx
+                    x_wr.append(x_wr_dialogues[i][idx] + [self.encoder['[classifier]']])
                 m_ = m_ + [1]   # add 1 to the end for masking the classifier token
 
             # ***************************************************
@@ -776,15 +785,23 @@ class MovieCorpus:
             bot_attitudes = attitudes[speaker[i % 2]]
             for attitude in bot_attitudes:
                 if attitude['relation'] == "has_general_bot_attitude":
-                    t_[i].extend([self.encoder[self.attitude_dict[attitude['subject']]]])   # adds the positional embeddinig (i.e ['pos_a_movie'] = ...
-                    x_[i].extend([self.encoder["[att_{}]".format(attitude['object'])]])     # adds the embd value for the attitude i.e. e.g. encoder["['att_2']"] = 40495
+                    # adds the positional embeddinig (i.e ['pos_a_movie'] = ...
+                    t_[i].extend([self.encoder[self.attitude_dict[attitude['subject']]]])
+                    # adds the embd value for the attitude i.e. e.g. encoder["['att_2']"] = 40495
+                    x_[i].extend([self.encoder["[att_{}]".format(attitude['object'])]])
                 elif attitude['relation'] == "has_bot_certificate_attitude":
                     t_[i].extend([self.encoder[self.attitude_dict['certificate#0']]])
                     x_[i].extend([self.encoder["[att_{}]".format(attitude['object'])]])
                 elif attitude['relation'] == "has_bot_budget_attitude":
                     t_[i].extend([self.encoder[self.attitude_dict['budget#0']]])
                     x_[i].extend([self.encoder["[att_{}]".format(attitude['object'])]])
-        for i in range(speaker_turns):      # arrange the attitudes according to the speaker turns, so the for the first input with two utterances, x here would have the facts for the first and second speaker; and so on for the next input which would be three facts since three two dialogue history and one next utterance
+        """
+        for-loop:   
+        arrange the attitudes according to the speaker turns, so the for the first input with two utterances, 
+        x here would have the facts for the first and second speaker; and so on for the next input which would be three 
+        facts since three two dialogue history and one next utterance
+        """
+        for i in range(speaker_turns):
             x.append(copy.deepcopy(x_[i % 2]))
             t.append(copy.deepcopy(t_[i % 2]))
         # for i in range(speaker_turns):
@@ -807,7 +824,7 @@ class MovieCorpus:
     def process_facts(self, facts, speaker_turns, x, t, b, inference=False):
         """ Generates sequences for the facts of one dialogue """
         speaker = ['second_speaker', 'first_speaker']
-        x_ = [[], []]   # contain fact embeddings from first and second speakers. Returns empty list if speaker has no facts
+        x_ = [[], []]   # fact embeddings from first and second speakers. Returns empty list if speaker has no facts
         t_ = [[], []]
         b_ = [[], []]
         if inference:
@@ -815,45 +832,37 @@ class MovieCorpus:
         else:
             r = 2
         for i in range(r):
-            bot_facts = facts[speaker[i % 2]]   # if speaker 1 has no facts, nothing is put into the t_, x_, b_ for the first loop
+            # if speaker 1 has no facts, nothing is put into the t_, x_, b_ for the first loop
+            bot_facts = facts[speaker[i % 2]]
             for fact in bot_facts:  # bot_facts:    list of dicts: e.g.: [{has_plot}, {has_budget}, {has_trivia}]
                 tokenized_fact = self.text_encoder.encode([fact['object']])[0]
-                l_fact = len(tokenized_fact)    # if fact: trivia or plot, l_fact: usually > 1; otherwise if budget, cert,... l_fact: 1. The latter aren't processed
+                # if fact: trivia or plot, l_fact: usually > 1; otherwise if budget, cert,... l_fact: 1.
+                # The latter aren't processed
+                l_fact = len(tokenized_fact)
                 if fact['relation'] == "has_trivia":
-                    t_[i].extend(l_fact * [self.encoder[self.fact_dict[fact['subject']]]])  # e.g. for fact on movie; put in pos emb value encoder[pos_f_movie] for the length of the facts statement
+                    # e.g. for movie fact, put in pos emb value encoder[pos_f_movie] for the len of the facts statement
+                    t_[i].extend(l_fact * [self.encoder[self.fact_dict[fact['subject']]]])
                     x_[i].extend(tokenized_fact)    # put in the token emb value for each word in the fact
                     b_[i].append(len(x_[i]))        # put in the length of the fact
                 elif fact['relation'] == "has_plot":
                     t_[i].extend(l_fact * [self.encoder[self.fact_dict['plot']]])
                     x_[i].extend(tokenized_fact)
                     b_[i].append(len(x_[i]))
-        for i in range(speaker_turns):      # arrange the facts according to the speaker turns, so the for the first input with two utterances, x here would have the facts for the first and second speaker; and so on for the next input which would be three facts since three two dialogue history and one next utterance
+        """
+        for-loop:
+        arrange the facts according to the speaker turns, so the for the first input with two utterances, x here would 
+        have the facts for the first and second speaker; and so on for the next input which would be three facts since 
+        three two dialogue history and one next utterance
+        """
+        for i in range(speaker_turns):
             x.append(copy.deepcopy(x_[i % 2]))
             t.append(copy.deepcopy(t_[i % 2]))
             b.append(copy.deepcopy(b_[i % 2]))
-        # for i in range(speaker_turns):
-        #     x_ = []
-        #     t_ = []
-        #     b_ = []
-        #     bot_facts = facts[speaker[i % 2]]
-        #     for fact in bot_facts:
-        #         tokenized_fact = self.text_encoder.encode([fact['object']])[0]
-        #         l_fact = len(tokenized_fact)
-        #         if fact['relation'] == "has_trivia":
-        #             t_.extend(l_fact * [self.encoder[self.fact_dict[fact['subject']]]])
-        #             x_.extend(tokenized_fact)
-        #             b_.append(len(x_))
-        #         elif fact['relation'] == "has_plot":
-        #             t_.extend(l_fact * [self.encoder[self.fact_dict['plot']]])
-        #             x_.extend(tokenized_fact)
-        #             b_.append(len(x_))
-        #     x.append(copy.deepcopy(x_))
-        #     t.append(copy.deepcopy(t_))
-        #     b.append(copy.deepcopy(b_))
 
-    def generate_clf_wrong_utterances(self, dialogue, utterances, samples=1):   # samples: more or less the no of clf we want to make (for now, samples = 2)
+    # samples: more or less the no of clf we want to make (for now, samples = 2)
+    def generate_clf_wrong_utterances(self, dialogue, utterances, samples=1):
         """ Do something. """
-        ref_story_type = dialogue['story'][2]['story_type']     # dialogue contains all info for just the current dialogue
+        ref_story_type = dialogue['story'][2]['story_type']     # dialogue contains all info for just the current dial.
         if ref_story_type == "PersonToMovieStory":
             ref_movie_title = dialogue['story'][0]['entities'][2]
         else:
@@ -867,13 +876,18 @@ class MovieCorpus:
                 wr_movie_title = wr_dialogue['story'][0]['entities'][2]
             else:
                 wr_movie_title = wr_dialogue['story'][0]['entities'][0]
-            if wr_movie_title == ref_movie_title and ref_prepared_id != wr_dialogue['story'][2]['prepared_id']:     # if same movie but different story_id (i.e. diff conversation)
-                wr_dialogues.append(copy.deepcopy(wr_dialogue))     # this would then contain info of all convos of the same movie but different story_id as reference dialogue
+            # if same movie but different story_id (i.e. diff conversation)
+            # then append info of all convos of the same movie but different story_id as reference dialogue
+            if wr_movie_title == ref_movie_title and ref_prepared_id != wr_dialogue['story'][2]['prepared_id']:
+                wr_dialogues.append(copy.deepcopy(wr_dialogue))
 
         for wr_dialogue in wr_dialogues:
-            wr_dialogue['dialogue_ner'] = self.process_dialogue(wr_dialogue['dialogue_ner'])        # remove [eou] and append end token: 'end#t'
+            # remove [eou] and append end token: 'end#t'
+            wr_dialogue['dialogue_ner'] = self.process_dialogue(wr_dialogue['dialogue_ner'])
 
-        def get_random():       # get a random utterance from a random dialogue in the list of dialogues from same movie name as the reference dialogue but diff story_id
+        # get a random utterance from a random dialogue in the list of dialogues from same movie name as the reference
+        # dialogue but diff story_id
+        def get_random():
             i = int(np.random.rand() * len(wr_dialogues))
             j = int(np.random.rand() * len(wr_dialogues[i]['dialogue_ner']))
             return wr_dialogues[i]['dialogue_ner'][j]
@@ -885,7 +899,7 @@ class MovieCorpus:
                 inner.append(get_random())      # for each reference utterance, generate two wrong utterances
             outer.append(inner)
 
-        return outer    # contains a list of len(utterance) where each utterance index is a list containainig two wrong utterances
+        return outer    # contains a list of len(utt.) where each utterance index is a list containainig two wrong utts.
 
     def process_dialogues(self, dialogue, x, t, m, compute_solo=False, x_wr=None, dialogue_src=None, num_x_wr=1):
         """ Generates sequences of one dialogue.
@@ -989,11 +1003,20 @@ class MovieCorpus:
                         m_ += (len(x_j) * [1])
 
                 # add all to main list  # For each utterance,
-                x.append(x_)            # x: actual dialogue embd including history for the next index (so for first index for ex. this contains concat of [utterance 1, utterance 2]
-                m.append(m_)            # m: mask for speaker turn [0: utterance odd (speaker 1), 1: utterance even (speaker 2)
-                t.append(t_)            # t: speaker embd value for each turn (same shape as m; [40517: speaker 1, 40518: speaker 2]
-                x_wr.append(x_wr_temp_stack)    # two wrong replies to the history (so for first index for ex. this contains ([utterance 1, wrong_reply_1], [utterance 1, wrong_reply_2])
-                # Note: m and t are only made for the right utterance history, x
+                """
+                x: actual dialogue embd including history for the next index (so for first index for ex. 
+                    this contains concat of [utterance 1, utterance 2]
+                m: mask for speaker turn [0: utterance odd (speaker 1), 1: utterance even (speaker 2)
+                t: speaker embd value for each turn (same shape as m; [40517: speaker 1, 40518: speaker 2]
+                x_wr.append: two wrong replies to the history (so for first index 
+                            e.g. this contains ([utterance 1, wrong_reply_1], [utterance 1, wrong_reply_2])
+                Note: m and t are only made for the right utterance history, x
+                """
+                x.append(x_)
+                m.append(m_)
+                t.append(t_)
+                x_wr.append(x_wr_temp_stack)
+
         # --- utterances per sample are limited to token size (e. g. 512) ---------------------------------------------
         else:
             for i, utterance in enumerate(tokenized_dialogue):
@@ -1055,8 +1078,8 @@ class MovieCorpus:
                     new_tokens.append(tokens[i])
                 else:
                     if tokens[i] == "[eou]":
-                        if tokens[i-1] in ["?", ".", ",", "!", ";", ":"]:   # continue (don't append) if the prev token was a punct.
-                            continue
+                        if tokens[i-1] in ["?", ".", ",", "!", ";", ":"]:
+                            continue    # continue (don't append) if the prev token was a punct.
                         else:
                             new_tokens.append(".")
                     else:
@@ -1087,16 +1110,15 @@ class Rocstories:
                                                       encoder=self.text_encoder)
 
         # Worst line of code, I saw in my life, ever!
-
         # Just computes the longest sequence in each input ( a seq = combination of input, and both output sentences)
-        self.params.n_ctx = min(
-            max(        # the '+' just concatenates the list together
-                [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len])) for x1, x2, x3 in zip(trX1, trX2, trX3)]
-                + [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len])) for x1, x2, x3 in zip(vaX1, vaX2, vaX3)]
-                + [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len])) for x1, x2, x3 in zip(teX1, teX2, teX3)]
-            ) + 3,      # '+ 3' for the sprecial variable (see __init__)
-            self.params.n_ctx )
-        # self.params.n_ctx = 77
+        # the '+' just concatenates the list together
+        self.params.n_ctx = min(max([len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len]))
+                                     for x1, x2, x3 in zip(trX1, trX2, trX3)]
+                                    + [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len]))
+                                       for x1, x2, x3 in zip(vaX1, vaX2, vaX3)]
+                                    + [len(x1[:self.max_len]) + max(len(x2[:self.max_len]), len(x3[:self.max_len]))
+                                       for x1, x2, x3 in zip(teX1, teX2, teX3)] ) + 3,  # '+ 3': for special variable
+                                self.params.n_ctx ) # self.params.n_ctx = 77
         trX, trM = self.transform_roc(trX1, trX2, trX3)
         vaX, vaM = self.transform_roc(vaX1, vaX2, vaX3)
 
@@ -1108,7 +1130,8 @@ class Rocstories:
 
         self.params.n_train = len(trY)
         self.params.n_valid = len(vaY)
-        self.params.n_batch_train = self.params.n_batch * self.params.n_gpu     # determine how much is trained on the gpu before gradient update
+        # determine how much is trained on the gpu before gradient update
+        self.params.n_batch_train = self.params.n_batch * self.params.n_gpu
         self.params.n_updates_total = (self.params.n_train // self.params.n_batch_train) * self.params.n_iter
 
         return trX, trM, trY, vaX, vaM, vaY, teX, teM
@@ -1169,16 +1192,20 @@ class Rocstories:
         start = self.encoder['_start_']
         delimiter = self.encoder['_delimiter_']
         for i, (x1, x2, x3), in enumerate(zip(X1, X2, X3)):
-            x12 = [start]+x1[:self.max_len]+[delimiter]+x2[:self.max_len]+[self.params.clf_token]   # clf_token = encoder['_classify_']
+            # params.clf_token = encoder['_classify_']
+            x12 = [start]+x1[:self.max_len]+[delimiter]+x2[:self.max_len]+[self.params.clf_token]
             x13 = [start]+x1[:self.max_len]+[delimiter]+x3[:self.max_len]+[self.params.clf_token]
             l12 = len(x12)
             l13 = len(x13)
-            xmb[i, 0, :l12, 0] = x12    # so each input i (from 1 to 1497), contains a pair of right and wrong combinations. The labeling would be fixed after for loop
+            # so each input i (from 1 to 1497), contains a pair of right and wrong combinations.
+            # The labeling would be fixed after for loop
+            xmb[i, 0, :l12, 0] = x12
             xmb[i, 1, :l13, 0] = x13
             mmb[i, 0, :l12] = 1         # a mask to know the positions where the input stops in a sequence
             mmb[i, 1, :l13] = 1
+        # fills up the last column with numbers from (40481 to 40481+77) (i guess for encoding the labels)
         xmb[:, :, :, 1] = np.arange(self.params.n_vocab+self.params.n_special,
-                                    self.params.n_vocab+self.params.n_special+self.params.n_ctx)    # fills up the last column with numbers from (40481 to 40481+77) (i guess for encoding the labels)
+                                    self.params.n_vocab+self.params.n_special+self.params.n_ctx)
         return xmb, mmb
 
 

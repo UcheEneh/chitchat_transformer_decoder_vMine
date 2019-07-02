@@ -114,7 +114,7 @@ def split_heads(x, n, k=False):
 def split_states(x, n):
     x_shape = utils.shape_list(x)
     m = x_shape[-1]     # last value in x shape_list
-    # new_x_shape: split x shape_list except last value concatenated with attention head split (i.e 12 * (m/12) which is still = 12)
+    # new_x_shape: split x shape_list except last value concat with attn head split (i.e 12*(m/12) which is still = 12)
     new_x_shape = x_shape[:-1]+[n, m//n]
     return tf.reshape(x, new_x_shape)
 
@@ -189,6 +189,8 @@ class Transformer:
             for train: these results operation are also used to perform gradient descent and update in gpu (unlike in 
                         mgpu_predict where they are just used to only calc the themselves in the gpu)
             tf.gradients(): apply gradient diff. calc (Jacobian) to the trainable variables
+            grads = list(): zips the gradient descent values and the variables to which they are to be applied on
+            gpu_ops.append: appends the logit and loss outputs from each gpu if clf
             """
             with tf.device(utils.assign_to_gpu(i, "/gpu:0")), tf.variable_scope(tf.get_variable_scope(),
                                                                                 reuse=do_reuse):
@@ -204,17 +206,18 @@ class Transformer:
                 else:
                     raise ValueError("{} is not a valid parameter for head_type!".format(self.params.head_type))
                 tvars = utils.find_trainable_variables("model")
-                grads = tf.gradients(train_loss, tvars)     # Returns "None" for dec model block except for h11 (i.e. last block)
-                grads = list(zip(grads, tvars))     # zips the gradient descent values and the variables to which they are to be applied on
+                grads = tf.gradients(train_loss, tvars)
+                grads = list(zip(grads, tvars))
                 gpu_grads.append(grads)             # appends the gradient properties from each gpu
                 if self.params.head_type == "clf":
-                    gpu_ops.append([clf_logits, clf_losses, lm_losses])     # appends the logit and loss outputs from each gpu if clf
+                    gpu_ops.append([clf_logits, clf_losses, lm_losses])
                 elif self.params.head_type == "lm":
                     gpu_ops.append([lm_losses])     # appends just the loss outputs from each gpu if lm
                 else:
                     raise ValueError("{} is not a valid parameter for head_type!".format(self.params.head_type))
         ops = [tf.concat(op, 0) for op in zip(*gpu_ops)]    # concatenate the loss result from the different gpus
-        grads = utils.average_grads(gpu_grads)  # contains [an average of the grads from each gpu, and the corresponding variables]
+        # contains [an average of the grads from each gpu, and the corresponding variables]
+        grads = utils.average_grads(gpu_grads)
 
         """
         Gradient operations (only in train, not in predict)
@@ -623,7 +626,7 @@ class Transformer:
             reshapes back to attn_heads: [?, 12, 77, 64] 
         """
         def _attn(q, k, v, train=False, scale=False, use_mask_attn=use_mask_attn):
-            w = tf.matmul(q, k)     # In[0].dim(0) and In[1].dim(0) must be the same: [4,12,511,64] vs [2,12,64,511]    # caused by: created facts and att only for right input, but during mult, for the dims, i either need to create for the wrong dialogue and set to 0, or only perform attention on the right dialogues
+            w = tf.matmul(q, k)
             if scale:
                 n_state = utils.shape_list(v)[-1]   # last value in v shape_list
                 w = w * tf.rsqrt(tf.cast(n_state, tf.float32))
