@@ -563,13 +563,9 @@ if __name__ == '__main__':
             - at current_batch 17448, x_batch: data[69791:69795]
             - at current_batch 17449, x_batch: data[69795:69799]    # last 3 batches  
         """
-        for current_batch, x_batch, m_batch, y_batch in enumerate(utils.iter_data(*skl_utils.shuffle(data_train['x'],
-                                                                                             data_train['m'],
-                                                                                             data_train['y'],
-                                                                                             random_state=np.random),
-                                                                                  n_batch=params.n_batch_train,
-                                                                                  truncate=True,
-                                                                                  verbose=True)):
+        for x_batch, m_batch, y_batch in utils.iter_data(*skl_utils.shuffle(data_train['x'], data_train['m'],
+                                                                            data_train['y'], random_state=np.random),
+                                                         n_batch=params.n_batch_train, truncate=True, verbose=True):
             """
             if grad_acc:
                 - if equal: after running through the num of grad_acc iteration steps, create a new non-trainable tf.Var 
@@ -602,8 +598,8 @@ if __name__ == '__main__':
             # perform evaluation after steps:
             if (step in [100, 1000, 2000, 5000]) and (epoch == 0):
                 log(epoch=epoch, step=step)
-            print("-------- May be wrong format ------- Current mini-batch {0} in Batch {1} performed each across "
-                  "{2} gpus in Epoch {3} done".format(current_batch, params.n_batch_train, params.n_gpu, epoch))
+            print("-------- May be wrong format ------- Current mini-batch in Batch {0} performed each across "
+                  "{1} gpus in Epoch {2} done".format(params.n_batch_train, params.n_gpu, epoch))
         log(epoch=epoch, step=step)
         print("**************** Epoch {0}/{1} done".format(epoch, params.n_iter))
 
