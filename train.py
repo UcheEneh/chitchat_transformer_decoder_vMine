@@ -34,8 +34,8 @@ LOSS_ONLY = False
 
 # --- functions -------------------------------------------------------------------------------------------------------
 def log(epoch, step):
-    params.n_valid = 300
     global best_score
+
     """
     iter_apply: returns only sum of losses if only_loss=True
     tr_cost: performs loss calculation only on n_valid: (374) input data
@@ -43,7 +43,8 @@ def log(epoch, step):
     
     tr_acc: compare label and argmax of logits outputs for (x12, x13) along axis 1 to tell how many were predicted right
     """
-    #
+    # set to reduce validation steps
+    params.n_valid = 200
     if LOSS_ONLY:
         tr_cost = iter_apply(data_train['x'][:params.n_valid],
                                         data_train['m'][:params.n_valid],
@@ -340,6 +341,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval_best_params', action='store_true')
     parser.add_argument('--dict_error_fix', type=bool, default=defaults['dict_error_fix'])
     parser.add_argument('--use_encoder', action='store_true')   # default = False, but if put in the terminal, = True
+    # n_data_to_use = 1: full data, 2: half, 3: one-third of full data
+    parser.add_argument('--n_data_to_use', type=int, default=defaults['n_data_to_use'])
     params = parser.parse_args()
     print(params)
 
@@ -392,7 +395,8 @@ if __name__ == '__main__':
     else:
         params.gradient_accumulation = False
     if params.use_encoder:
-        params.n_enc_layer = 6  # to make this editable
+        params.n_enc_layer = 4      # reduce encoder and decoder layer sizes
+        params.n_layer = 8
 
     # --- generate model as tensorflow graph (train) ------------------------------------------------------------------
     print("Generating model ...")
@@ -526,6 +530,15 @@ if __name__ == '__main__':
             if params.gradient_accumulation:
                 params.n_batch_train = int(params.n_batch_train / params.n_acc_batch)
 
+
+        # REDUCE DATA SIZE:
+        params.n_data_to_use = int(len(data_train['x']) / params.n_data_to_use)    # 3: use one-third of the full data
+
+        used_train_x = data_train['x'][:params.n_data_to_use]
+        used_train_m = data_train['m'][:params.n_data_to_use]
+        used_train_y = data_train['y'][:params.n_data_to_use]
+        print("{0}/{1} data samples used".format(len(used_train_x), len(data_train['x'])))
+
         if params.gradient_accumulation:    # False for rocstories
             sess.run(accumulation_init_step)    # op to assign 0s to a non-trainable tf.Variable of shape tvars
 
@@ -563,8 +576,14 @@ if __name__ == '__main__':
             - at current_batch 17448, x_batch: data[69791:69795]
             - at current_batch 17449, x_batch: data[69795:69799]    # last 3 batches  
         """
+
+        """
         for x_batch, m_batch, y_batch in utils.iter_data(*skl_utils.shuffle(data_train['x'], data_train['m'],
                                                                             data_train['y'], random_state=np.random),
+                                                         n_batch=params.n_batch_train, truncate=True, verbose=True):
+        """
+        for x_batch, m_batch, y_batch in utils.iter_data(*skl_utils.shuffle(used_train_x, used_train_m,
+                                                                            used_train_y, random_state=np.random),
                                                          n_batch=params.n_batch_train, truncate=True, verbose=True):
             """
             if grad_acc:
@@ -598,8 +617,6 @@ if __name__ == '__main__':
             # perform evaluation after steps:
             if (step in [100, 1000, 2000, 5000]) and (epoch == 0):
                 log(epoch=epoch, step=step)
-            print("-------- May be wrong format ------- Current mini-batch in Batch {0} performed each across "
-                  "{1} gpus in Epoch {2} done".format(params.n_batch_train, params.n_gpu, epoch))
         log(epoch=epoch, step=step)
         print("**************** Epoch {0}/{1} done".format(epoch, params.n_iter))
 
