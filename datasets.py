@@ -718,11 +718,11 @@ class MovieCorpus:
             - so if one wrong dialogue is used, list of 2 similar values created e.g. [40517, 40517]
             """
             if self.params.dynamic_pos_embeddings:      # initially True (use False for first try)
-                poss_latest_start = 512 - d_length - 30  # TODO: Remove this hack
+                poss_latest_start = 512 - d_length - 30 # TODO: Remove this hack
                 pos_emb_stt_l = [np.random.randint(low=pos_emb_stt, high=pos_emb_stt + poss_latest_start)]
                 if x_wr is not None:
                     for idx in range(len(x_wr)):
-                        poss_latest_start = 512 - w_length_d_wr[idx] + 1  # TODO: Bug: w_length_wr is wrong length
+                        poss_latest_start = 512 - w_length_d_wr[idx] - 1  # TODO: Bug: w_length_wr is wrong length
                         pos_emb_stt_l.append(np.random.randint(low=pos_emb_stt, high=pos_emb_stt + poss_latest_start))
             else:
                 if x_wr is None:
@@ -746,10 +746,20 @@ class MovieCorpus:
                 - for-loop: create positional embedding for the other wrong dialogues at indices yi_s
                 """
                 end_wrs = [sst + len(x_wr[idx]) for idx in range(len(x_wr))]
-                x[i, 1, yi, sst:end, 2] = np.arange(pos_emb_stt_l[0], pos_emb_stt_l[0] + d_length)
+
+                # DEBUG
+                values = np.arange(pos_emb_stt_l[0], pos_emb_stt_l[0] + d_length)
+                for val in values:
+                    if val >= 41030:
+                        stop = "here"
+                x[i, 1, yi, sst:end, 2] = values
+
                 for idx, (end_wr, yi_) in enumerate(zip(end_wrs, yi_s)):
-                    x[i, 1, yi_, sst:end_wr, 2] = np.arange(pos_emb_stt_l[idx + 1],
-                                                            pos_emb_stt_l[idx + 1] + len(x_wr[idx]))
+                    values2 = np.arange(pos_emb_stt_l[idx + 1], pos_emb_stt_l[idx + 1] + len(x_wr[idx]))
+                    for val in values2:
+                        if val >= 41030 or i == 131:
+                            stop = "here"
+                    x[i, 1, yi_, sst:end_wr, 2] = values2
 
         return x, m, y
 

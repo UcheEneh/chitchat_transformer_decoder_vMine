@@ -34,6 +34,7 @@ LOSS_ONLY = False
 
 # --- functions -------------------------------------------------------------------------------------------------------
 def log(epoch, step):
+    params.n_valid = 300
     global best_score
     # iter_apply: returns only sum of losses if only_loss=True,
     if LOSS_ONLY:
@@ -412,7 +413,7 @@ if __name__ == '__main__':
             step += 1
 
             # perform evaluation after steps:
-            if (step in [1000, 2000, 5000]) and (epoch == 0):
+            if (step in [100, 1000, 2000, 5000]) and (epoch == 0):
                 log(epoch=epoch, step=step)
             print("-------- May be wrong format ------- Batch {0}/{1} performed each across {2} gpus in Epoch {3} done".
                   format(current_batch, params.n_batch_train, params.n_gpu, epoch))
@@ -424,7 +425,8 @@ if __name__ == '__main__':
         sess.run([p.assign(ip) for p, ip in zip(t_vars, joblib.load(os.path.join(params.save_dir,       # store the trainable variables (for the we and the h_layer blocks) as params
                                                                                  params.desc,
                                                                                  'best_params.jl')))])
-        predict()
+        if params.dataset == "rocstories":
+            predict()
         if params.analysis:
             analysis.rocstories(dataset, params.data_dir,
                                 os.path.join(params.submission_dir, FILENAMES[params.dataset]),
