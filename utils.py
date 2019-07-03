@@ -36,7 +36,9 @@ def encode_dataset(*splits, encoder):
         fields = []
         for field in split:     # list of all joined input sentences
             if isinstance(field[0], str):   # if the first content is a string
-                field = encoder.encode(field)   # basically, input: list of all joined input sentences, returns: list of input sentences in bit-pairs encoded format
+                # basically, input: list of all joined input sentences, returns: list of input sentences in bit-pairs
+                # encoded format
+                field = encoder.encode(field)
             fields.append(field)
         encoded_splits.append(fields)
     return encoded_splits       # basically returns the encodings of all the inputs using bpe
@@ -55,13 +57,21 @@ def stsb_label_encoding(labels, nclass=6):
     return Y
 
 def shape_list(x):  # x: embedded input with addition of positional encoding
+    # deal with dynamic shape in tensorflow cleanly
+
     """
-    deal with dynamic shape in tensorflow cleanly
+    diff between get_shape and tf.shape:
+        https://stackoverflow.com/questions/37096225/how-to-understand-static-shape-and-dynamic-shape-in-tensorflow
+
+    return:
+        - not sure how but I think: what is returned is ps[i, :, :, ...] depending on the length of the list, ps
+        - Note: this isn't returning actual values, just the shape of the tensor. ts[i] becomes useful if the value in
+                the list is None, as it dynamically calls for the value during computation.
     """
-    ps = x.get_shape().as_list()    # just returns the shape in a list.     # diff between get_shape and tf.shape: https://stackoverflow.com/questions/37096225/how-to-understand-static-shape-and-dynamic-shape-in-tensorflow
+    ps = x.get_shape().as_list()    # just returns the shape in a list.
     ts = tf.shape(x)        # basically this is an op to get the dynamic shape of a tensor
-    return [ts[i] if ps[i] is None else ps[i] for i in range(len(ps))]      # not sure how but I think: what is returned is ps[i, :, :, ...] depending on the length of the list, ps
-                                                                            # Note: this isn't returning actual values, just the shape of the tensor. ts[i] becomes useful if the value in the list is None, as it dynamically calls for the value during computation.
+    return [ts[i] if ps[i] is None else ps[i] for i in range(len(ps))]
+
 def np_softmax(x, t=1):
     x = x/t
     x = x - np.max(x, axis=-1, keepdims=True)
@@ -118,7 +128,7 @@ def remove_none(l):
 def iter_data(*datas, n_batch=128, truncate=False, verbose=False, max_batches=float("inf")):
     # For eval log: *datas = Xs, Ms, Ys, n_batch=params.n_batch_train (= 64), truncate=False, verbose=True
     n = len(datas[0])   # length of Xs (1497 or so). For validation, n: 374
-    if truncate:        # i guess for fitting the data into the batch size incase n and n_batch not a fine division (i.e. % != 0)
+    if truncate:        # for fitting the data into the batch size incase n and n_batch not a fine div. (i.e. % != 0)
         n = (n//n_batch)*n_batch
     n = min(n, max_batches*n_batch)
     n_batches = 0
@@ -126,12 +136,17 @@ def iter_data(*datas, n_batch=128, truncate=False, verbose=False, max_batches=fl
         f = sys.stderr
     else:
         f = open(os.devnull, 'w')
-    for i in tqdm(range(0, n, n_batch), total=n//n_batch, file=f, ncols=80, leave=False):   # i: [0, 64, 128, 192, ...]     # for eval, n_batch = 16; i: [0, 16, 32, ..., 368, (369 - 374) ]
+    # for eval, n_batch = 16; i: [0, 16, 32, ..., 368, (369 - 374) ]
+    for i in tqdm(range(0, n, n_batch), total=n//n_batch, file=f, ncols=80, leave=False):   # i: [0, 64, 128, 192, ...]
         if n_batches >= max_batches: raise StopIteration
         if len(datas) == 1:
             yield datas[0][i:i+n_batch]
         else:       # Basically seperate the data into batches
-            yield (d[i:i+n_batch] for d in datas)   # iter_data would now be a generator containing the data in the format here i.e. d[i:i+n_batch] where i in range(0, total_input_size, batch_size)
+            """
+            iter_data would now be a generator containing the data in the format here 
+            i.e. d[i:i+n_batch] where i in range(0, total_input_size, batch_size)
+            """
+            yield (d[i:i+n_batch] for d in datas)
         n_batches += 1
 
 @function.Defun(
@@ -152,7 +167,8 @@ def assign_to_gpu(gpu=0, ps_dev="/device:CPU:0"):
             return "/gpu:%d" % gpu
     return _assign
 
-def average_grads(tower_grads):     # tower_grads:  contains the four lists of gradients from each gpu     [list(zip(grads, trainable_vars)), ...]
+# tower_grads:  contains the four lists of gradients from each gpu
+def average_grads(tower_grads):     # [list(zip(grads, trainable_vars)), ...]
     def average_dense(grad_and_vars):
         if len(grad_and_vars) == 1:     # if only one gpu used, no need for finding the average
             return grad_and_vars[0][0]
@@ -179,10 +195,11 @@ def average_grads(tower_grads):     # tower_grads:  contains the four lists of g
     for grad_and_vars in zip(*tower_grads):
         if grad_and_vars[0][0] is None:     # if no gradient has been calculated yet
             grad = None
-        elif isinstance(grad_and_vars[0][0], tf.IndexedSlices):     # if the tensors in the grads from gpu is an indexed slice (*Note: for-loop, so this is done for each gpu)
+        elif isinstance(grad_and_vars[0][0], tf.IndexedSlices):
+            # if the tensors in the grads from gpu is an indexed slice (*Note: for-loop, so this is done for each gpu)
             grad = average_sparse(grad_and_vars)
         else:
-            grad = average_dense(grad_and_vars)     # the average of the gradients in returned with the corresponding variables
+            grad = average_dense(grad_and_vars)     # the average of the grads in returned with the corresp. variables
         v = grad_and_vars[0][1]
         grad_and_var = (grad, v)
         average_grads.append(grad_and_var)

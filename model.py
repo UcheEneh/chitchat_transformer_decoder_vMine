@@ -7,6 +7,8 @@ import numpy as np
 import utils
 import opt
 
+import datetime
+
 from functools import partial
 # from tensor2tensor.utils import beam_search
 
@@ -168,10 +170,12 @@ def norm(x, scope, axis=None):  # perform normalization across the input
 
 
 class Transformer:
-    def __init__(self, params):
+    def __init__(self, params, use_encoder):
         self.params = params
+        self.use_encoder = use_encoder  # Always False if not explicitly set at the call line
+        # self.logdir = "tensorboard/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S" + "/")
 
-    def mgpu_train(self, *xs, use_encoder=False):
+    def mgpu_train(self, *xs):
         gpu_ops = []
         gpu_grads = []
         tvars = None
@@ -194,15 +198,17 @@ class Transformer:
             """
             with tf.device(utils.assign_to_gpu(i, "/gpu:0")), tf.variable_scope(tf.get_variable_scope(),
                                                                                 reuse=do_reuse):
-                clf_logits, lm_logits, clf_losses, lm_losses = self.model(*xs, train=True, reuse=do_reuse,
-                                                                          use_encoder=use_encoder)
+                clf_logits, lm_logits, clf_losses, lm_losses = self.model(*xs, train=True, reuse=do_reuse)
                 if self.params.head_type == "clf":
                     if self.params.lm_coef > 0:     # calculate and apply a joint loss if clf task also includes lm
                         train_loss = tf.reduce_mean(clf_losses) + self.params.lm_coef * tf.reduce_mean(lm_losses)
+                        # tf.summary.scalar('Multi-task Clf-Lm Loss average', train_loss)
                     else:
                         train_loss = tf.reduce_mean(clf_losses)
+                        # tf.summary.scalar('Clf Loss average', train_loss)
                 elif self.params.head_type == "lm":
                     train_loss = tf.reduce_mean(lm_losses)
+                    # tf.summary.scalar('Lm Loss average', train_loss)
                 else:
                     raise ValueError("{} is not a valid parameter for head_type!".format(self.params.head_type))
                 tvars = utils.find_trainable_variables("model")
@@ -215,6 +221,7 @@ class Transformer:
                     gpu_ops.append([lm_losses])     # appends just the loss outputs from each gpu if lm
                 else:
                     raise ValueError("{} is not a valid parameter for head_type!".format(self.params.head_type))
+
         ops = [tf.concat(op, 0) for op in zip(*gpu_ops)]    # concatenate the loss result from the different gpus
         # contains [an average of the grads from each gpu, and the corresponding variables]
         grads = utils.average_grads(gpu_grads)
@@ -239,6 +246,7 @@ class Transformer:
             zero_ops = None
             accum_ops = None
             grads = [g for g, p in grads]
+
         # Perform Optimization  (rocstories:- param.opt: adam)
         # partial(LR_SCHEDULES...): i guess for changing the lr decay value over time (Not sure)
         train = OPT_FNS[self.params.opt](tvars,
@@ -252,9 +260,13 @@ class Transformer:
                                          b1=self.params.b1,
                                          b2=self.params.b2,
                                          e=self.params.e)
+
+        # Tensorboard
+        # self.merged = tf.summary.merge_all()
+        # self.writer = tf.summary.FileWriter(self.logdir, tf.Session().graph)  # sess.graph
         return [train, accum_ops, zero_ops] + ops
 
-    def mgpu_predict(self, *xs, use_encoder=False):
+    def mgpu_predict(self, *xs):
         """
         Prediction *xs: (X_train, M_train, Y_train) for evaluation but for test: (X_test, M_test, Y_test)
         tf.split(): create tuple of split x along axis 0, into number of available gpu
@@ -265,8 +277,7 @@ class Transformer:
         xs = (tf.split(x, self.params.n_gpu, 0) for x in xs)
         for i, xs in enumerate(zip(*xs)):
             with tf.device(utils.assign_to_gpu(i, "/gpu:0")), tf.variable_scope(tf.get_variable_scope(), reuse=True):
-                clf_logits, lm_logits, clf_losses, lm_losses = self.model(*xs, train=False, reuse=True,
-                                                                          use_encoder=use_encoder)
+                clf_logits, lm_logits, clf_losses, lm_losses = self.model(*xs, train=False, reuse=True)
                 if self.params.head_type == "clf":
                     gpu_ops.append([clf_logits, clf_losses, lm_losses])
                 elif self.params.head_type == "lm":
@@ -276,7 +287,7 @@ class Transformer:
         ops = [tf.concat(op, 0) for op in zip(*gpu_ops)]    # concatenate the loss result from the different gpus
         return ops
 
-    def init_and_load_parameter_from_file(self, sess, path, use_encoder=False):
+    def init_and_load_parameter_from_file(self, sess, path):
         tvars = utils.find_trainable_variables('model')
         with open(os.path.join(path, 'params_shapes.json')) as f:   # loads list of shapes from json file
             shapes = json.load(f)       # [[512, 768], [40478, 768], [1, 768, 2304], ..., ]
@@ -328,7 +339,7 @@ class Transformer:
 
         (The clf weight and bias are not assigned since learning hasn't been done yet for it (so just initialized)
         """
-        if use_encoder is False:
+        if self.use_encoder is False:
             sess.run([p.assign(ip) for p, ip in zip(tvars[:self.params.n_transfer],
                                                     init_params[:self.params.n_transfer])])
         else:   # load only word embeddings
@@ -336,7 +347,6 @@ class Transformer:
                 # if tvars[x].name == 'model/we:0':
                     # sess.run([p.assign(ip) for p, ip in zip(tvars[x], init_params[0])])
             sess.run([p.assign(ip) for p, ip in zip(tvars[:1], init_params[:1])])
-
 
     def load_checkpoint(self, sess, path=None):
         if path is None:
@@ -347,7 +357,7 @@ class Transformer:
         # This should be fine since I'm loading my own saved weights
         sess.run([p.assign(ip) for p, ip in zip(t_vars, joblib.load(os.path.join(save_dir)))])
 
-    def model(self, X, M, Y, train=False, reuse=False, greedy_decoding=False, lm_logits_only=False, use_encoder=False):
+    def model(self, X, M, Y, train=False, reuse=False, greedy_decoding=False, lm_logits_only=False):
         """ Forward Step of the Decoder.
 
         To be done:
@@ -373,7 +383,7 @@ class Transformer:
                                  initializer=tf.random_normal_initializer(stddev=0.02))
             we = dropout(we, self.params.embd_pdrop, train)     # set the dropout for each gpu input
 
-            if use_encoder is False:    # Original, just decoder model
+            if self.use_encoder is False:    # Original, just decoder model
                 # --- reshape, if not greedy decoding -----------------------------------------------------------------
                 # Not fully implemented.
                 if not greedy_decoding:
@@ -425,6 +435,9 @@ class Transformer:
                 # --- encoder stacks ----------------------------------------------------------------------------------
                 for layer in range(self.params.n_enc_layer):
                     h_enc = self.enc_block(h_enc, 'enc_h%d' % layer, train=train, scale=True)
+
+                # Add last layer activation to TBoard
+                # tf.summary.histogram('Encoder final attention activations after layer norm', h_enc)
 
                 # --- decoder stacks ----------------------------------------------------------------------------------
                 for layer in range(self.params.n_layer):
@@ -529,6 +542,7 @@ class Transformer:
         clf_logits = clf(clf_h, 1, train=train)
         clf_logits = tf.reshape(clf_logits, [-1, self.params.clf_pipes])
         clf_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=clf_logits, labels=Y)
+        # tf.summary.histogram('Clf cross_entropy', clf_losses)
 
         return clf_logits, clf_losses
 

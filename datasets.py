@@ -158,7 +158,7 @@ class MovieCorpus:
                 file_missing = True
 
         if not file_missing and not OVERWRITE_EXISTING_DATA:
-            print("INFO: Loading prepared data.")
+            print("\n INFO: Loading prepared data.")
             if self.params.head_type == "clf":
                 # --- classifier data load ----------------------------------------------------------------------------
                 """

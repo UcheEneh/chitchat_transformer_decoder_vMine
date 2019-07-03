@@ -44,7 +44,7 @@ def log(epoch, step):
     tr_acc: compare label and argmax of logits outputs for (x12, x13) along axis 1 to tell how many were predicted right
     """
     # set to reduce validation steps
-    params.n_valid = 200
+    params.n_valid = 300
     if LOSS_ONLY:
         tr_cost = iter_apply(data_train['x'][:params.n_valid],
                                         data_train['m'][:params.n_valid],
@@ -74,11 +74,15 @@ def log(epoch, step):
         va_acc = 2 ** va_cost
     else:
         raise ValueError("Not a valid head_type!")
+
+    # Tensorboard
+    # tf.summary.scalar('Training accuracy', tr_acc)
+    # tf.summary.scalar('Validation accuracy', va_acc)
+
     # Store the accuracy or perplexity values and print
-    logger.log(n_epochs=epoch, n_updates=step, tr_cost=tr_cost,
-               va_cost=va_cost, tr_acc=tr_acc, va_acc=va_acc)
-    print('\n epoch: %d step: %d tr_cost: %.3f va_cost: %.3f tr_metr: %.2f va_metr: %.2f' % (epoch, step, tr_cost,
-                                                                                          va_cost, tr_acc, va_acc))
+    logger.log(n_epochs=epoch, n_updates=step, tr_cost=tr_cost, va_cost=va_cost, tr_acc=tr_acc, va_acc=va_acc)
+    print('-- epoch: %d step: %d tr_cost: %.3f va_cost: %.3f tr_metr: %.2f va_metr: %.2f' % (epoch, step, tr_cost,
+                                                                                             va_cost, tr_acc, va_acc))
     if params.submit:
         score = va_acc
         if score > best_score:
@@ -342,10 +346,17 @@ if __name__ == '__main__':
     parser.add_argument('--dict_error_fix', type=bool, default=defaults['dict_error_fix'])
     parser.add_argument('--use_encoder', action='store_true')   # default = False, but if put in the terminal, = True
     # n_data_to_use = 1: full data, 2: half, 3: one-third of full data
-    parser.add_argument('--n_data_to_use', type=int, default=defaults['n_data_to_use'])
+    parser.add_argument('--n_data_fraction', type=int, default=defaults['n_data_fraction'])
     parser.add_argument('--n_enc_layer', type=int, default=defaults['n_enc_layer'])
     params = parser.parse_args()
     print(params)
+
+    """
+    python train.py --dataset moviecorpus --desc moviecorpus --use_encoder --n_gpu 2 --submit --n_batch 2 
+    --n_data_fraction 6 --n_enc_layer 2 --n_layer 2
+    
+    --n_batch 8 --n_acc_size 2
+    """
 
     # --- set seeds ---------------------------------------------------------------------------------------------------
     random.seed(params.seed)
@@ -374,6 +385,9 @@ if __name__ == '__main__':
                                                                                          test=params.eval_best_params)
         data_test['x'] = []
         data_test['m'] = []
+
+        # REDUCE DATA SIZE:
+        params.n_data_fraction = int(len(data_train['x']) / params.n_data_fraction)  # 3: use one-third of the full data
     else:
         raise Exception("{}-dataset is not implemented.".format(params.dataset))
 
@@ -396,15 +410,9 @@ if __name__ == '__main__':
     else:
         params.gradient_accumulation = False
 
-    """
-    if params.use_encoder:
-        params.n_enc_layer = 4      # reduce encoder and decoder layer sizes
-        params.n_layer = 8
-    """
-
     # --- generate model as tensorflow graph (train) ------------------------------------------------------------------
     print("Generating model ...")
-    transformer_decoder = model.Transformer(params=params)
+    transformer_decoder = model.Transformer(params=params, use_encoder=params.use_encoder)
     if params.use_encoder is False:     # original decoder model
         X_train = tf.placeholder(tf.int32, [None, params.clf_pipes, params.n_ctx, params.n_embd_d+1])
     else:   # with encoder-decoder model
@@ -419,7 +427,7 @@ if __name__ == '__main__':
     accumulation_step: op to store the avg of the grads from each gpu into a non-trainable tf.Variable of shape tvars
     accumulation_init_step: op to create and assign 0s into a non-trainable tf.Variable of shape tvars
     """
-    result = transformer_decoder.mgpu_train(X_train, M_train, Y_train, use_encoder=params.use_encoder)
+    result = transformer_decoder.mgpu_train(X_train, M_train, Y_train)
     train_step = result[0]
     accumulation_step = result[1]       # None for rocstories
     accumulation_init_step = result[2]  # None for rocstories
@@ -440,14 +448,15 @@ if __name__ == '__main__':
     t_vars = utils.find_trainable_variables('model')    # contains the trainable variables from model for gradient desc
 
     # --- load pretrained parameter -----------------------------------------------------------------------------------
-    print("Loading pretrained parameter ...")
-    transformer_decoder.init_and_load_parameter_from_file(sess=sess, path="model/", use_encoder=params.use_encoder)
+    print("\nLoading pretrained parameter ...")
+    # Initialize global variables
+    transformer_decoder.init_and_load_parameter_from_file(sess=sess, path="model/")
 
     # --- add evaluation nodes to tensorflow graph --------------------------------------------------------------------
     # Just add the node, not actually perform eval. Eval is performed in iter_apply,iter_predict
     # perform training but this time turn off dropout???
     # eval_mgpu_result: returns the losses but not grads since only evaluating
-    eval_mgpu_result = transformer_decoder.mgpu_predict(X_train, M_train, Y_train, use_encoder=params.use_encoder)
+    eval_mgpu_result = transformer_decoder.mgpu_predict(X_train, M_train, Y_train)
 
     """
     if params.head_type == "clf":
@@ -488,7 +497,7 @@ if __name__ == '__main__':
         X = tf.placeholder(tf.int32, [None, 2, params.clf_pipes, params.n_ctx, params.n_embd_d + 1])
     M = tf.placeholder(tf.float32, [None, params.clf_pipes, params.n_ctx])
     Y = tf.placeholder(tf.int32, [None])
-    eval_result = transformer_decoder.model(X, M, Y, train=False, reuse=True, use_encoder=params.use_encoder)
+    eval_result = transformer_decoder.model(X, M, Y, train=False, reuse=True)
     eval_clf_logits = eval_result[0]
     eval_lm_logits = eval_result[1]
     eval_clf_losses = eval_result[2]
@@ -522,10 +531,12 @@ if __name__ == '__main__':
         sys.exit()
 
     # --- train loop --------------------------------------------------------------------------------------------------
-    print("Start training ...")
+    print("\nPerform initial Evaluation ...")
     step = 0
     best_score = 0
     log(epoch=0, step=0)    # perform evaluation on first step
+    print("\nStart training ...")
+    # print("Call 'tensorboard --logdir=tensorboard' from '/tensorboard' directory after first 1000 steps of training")
     for epoch in range(params.n_iter):  # n_iter = 3
         # Probably not needed for rocstories
         if epoch > 0 and params.head_type == "clf" and params.dataset == "moviecorpus":
@@ -534,14 +545,11 @@ if __name__ == '__main__':
             if params.gradient_accumulation:
                 params.n_batch_train = int(params.n_batch_train / params.n_acc_batch)
 
-
         # REDUCE DATA SIZE:
-        params.n_data_to_use = int(len(data_train['x']) / params.n_data_to_use)    # 3: use one-third of the full data
-
-        used_train_x = data_train['x'][:params.n_data_to_use]
-        used_train_m = data_train['m'][:params.n_data_to_use]
-        used_train_y = data_train['y'][:params.n_data_to_use]
-        print("\n {0}/{1} data samples used".format(len(used_train_x), len(data_train['x'])))
+        used_train_x = data_train['x'][:params.n_data_fraction]
+        used_train_m = data_train['m'][:params.n_data_fraction]
+        used_train_y = data_train['y'][:params.n_data_fraction]
+        print("\n-- {0}/{1} data samples used".format(len(used_train_x), len(data_train['x'])))
 
         if params.gradient_accumulation:    # False for rocstories
             sess.run(accumulation_init_step)    # op to assign 0s to a non-trainable tf.Variable of shape tvars
@@ -593,8 +601,6 @@ if __name__ == '__main__':
             if grad_acc:
                 - if equal: after running through the num of grad_acc iteration steps, create a new non-trainable tf.Var 
                         and then perform grad calculation and assignment to it
-                - run(train_step): perform grad update
-                - run(acc_init_step): clear the tvars after gradient update
                 - run(acc_step): operation to calc and store the average of the grads from each gpu into a non-trainable
                                 tf.Variable of shape tvars
 
@@ -611,18 +617,27 @@ if __name__ == '__main__':
             """
             if params.gradient_accumulation:
                 if step % params.n_acc_batch == params.n_acc_batch - 1:
-                    sess.run(train_step)
-                    sess.run(accumulation_init_step)
-                sess.run(accumulation_step, {X_train: x_batch, M_train: m_batch, Y_train: y_batch})
+                    sess.run(train_step)    # calculate gradients but don't perform update yet
+                    sess.run(accumulation_init_step)    # clear the tvars list after grad calculated, for next acc_batch
+                sess.run(accumulation_step, {X_train: x_batch, M_train: m_batch, Y_train: y_batch})     # perform update
             else:
                 cost, _ = sess.run([loss, train_step], {X_train: x_batch, M_train: m_batch, Y_train: y_batch})
-            step += 1
 
+                """
+                # TENSORBOARD: write summary after each step to Tensorboard
+                summary, cost, _ = sess.run([transformer_decoder.merged, loss, train_step],
+                                            {X_train: x_batch, M_train: m_batch, Y_train: y_batch})
+                transformer_decoder.writer.add_summary(summary, step)  # stores loss and accuracy after 1000 steps
+                """
+
+            step += 1
             # perform evaluation after steps:
-            if (step in [100, 1000, 2000, 5000]) and (epoch == 0):
+            if (step in [100, 500, 1000, 5000]) and (epoch == 0):
                 log(epoch=epoch, step=step)
         log(epoch=epoch, step=step)
-        print("\n **************** Epoch {0}/{1} done".format(epoch, params.n_iter))
+        print("\n******************** Epoch {0}/{1} done ******************** \n".format(epoch + 1, params.n_iter))
+
+    # transformer_decoder.writer.close()
 
     # After training, if submit, save trainable variables, and then perform prediction
     if params.submit:
@@ -636,3 +651,11 @@ if __name__ == '__main__':
             analysis.rocstories(dataset, params.data_dir,
                                 os.path.join(params.submission_dir, FILENAMES[params.dataset]),
                                 os.path.join(params.log_dir, 'rocstories.jsonl'))
+
+    """ Track training progress
+
+        Note that you can track its progress using TensorBoard. While the following cell is running,
+        use your terminal to enter the directory that contains this notebook, enter 
+            - tensorboard --logdir=tensorboard, 
+        and visit http://localhost:6006/ with a browser to keep an eye on your training progress.
+    """
