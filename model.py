@@ -173,7 +173,7 @@ class Transformer:
     def __init__(self, params, use_encoder):
         self.params = params
         self.use_encoder = use_encoder  # Always False if not explicitly set at the call line
-        # self.logdir = "tensorboard/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S" + "/")
+        self.logdir = "tensorboard/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S" + "/")
 
     def mgpu_train(self, *xs):
         gpu_ops = []
@@ -202,13 +202,13 @@ class Transformer:
                 if self.params.head_type == "clf":
                     if self.params.lm_coef > 0:     # calculate and apply a joint loss if clf task also includes lm
                         train_loss = tf.reduce_mean(clf_losses) + self.params.lm_coef * tf.reduce_mean(lm_losses)
-                        # tf.summary.scalar('Multi-task Clf-Lm Loss average', train_loss)
+                        tf.summary.scalar('Multi-task Clf-Lm Loss average', train_loss)
                     else:
                         train_loss = tf.reduce_mean(clf_losses)
-                        # tf.summary.scalar('Clf Loss average', train_loss)
+                        tf.summary.scalar('Clf Loss average', train_loss)
                 elif self.params.head_type == "lm":
                     train_loss = tf.reduce_mean(lm_losses)
-                    # tf.summary.scalar('Lm Loss average', train_loss)
+                    tf.summary.scalar('Lm Loss average', train_loss)
                 else:
                     raise ValueError("{} is not a valid parameter for head_type!".format(self.params.head_type))
                 tvars = utils.find_trainable_variables("model")
@@ -262,8 +262,8 @@ class Transformer:
                                          e=self.params.e)
 
         # Tensorboard
-        # self.merged = tf.summary.merge_all()
-        # self.writer = tf.summary.FileWriter(self.logdir, tf.Session().graph)  # sess.graph
+        self.merged = tf.summary.merge_all()
+        self.writer = tf.summary.FileWriter(self.logdir, tf.Session().graph)  # sess.graph
         return [train, accum_ops, zero_ops] + ops
 
     def mgpu_predict(self, *xs):
@@ -437,7 +437,7 @@ class Transformer:
                     h_enc = self.enc_block(h_enc, 'enc_h%d' % layer, train=train, scale=True)
 
                 # Add last layer activation to TBoard
-                # tf.summary.histogram('Encoder final attention activations after layer norm', h_enc)
+                tf.summary.histogram('Encoder final attention activations after layer norm', h_enc)
 
                 # --- decoder stacks ----------------------------------------------------------------------------------
                 for layer in range(self.params.n_layer):
@@ -542,7 +542,7 @@ class Transformer:
         clf_logits = clf(clf_h, 1, train=train)
         clf_logits = tf.reshape(clf_logits, [-1, self.params.clf_pipes])
         clf_losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=clf_logits, labels=Y)
-        # tf.summary.histogram('Clf cross_entropy', clf_losses)
+        tf.summary.histogram('Clf cross_entropy', clf_losses)
 
         return clf_logits, clf_losses
 

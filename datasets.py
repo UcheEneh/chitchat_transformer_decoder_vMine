@@ -436,7 +436,7 @@ class MovieCorpus:
                 # x_wr = x_wr_dialogues[i][wr_idx] + [self.encoder['[classifier]']]
                 x_wr = []
                 for idx in wr_idx:
-                    # append wrong dials. using index wr_idx
+                    # append wrong dials. using index wr_idx and add encoder embd
                     x_wr.append(x_wr_dialogues[i][idx] + [self.encoder['[classifier]']])
                 m_ = m_ + [1]   # add 1 to the end for masking the classifier token
             w_concat = wf + wa + wd     # facts, attitudes, dialogue (with history)
@@ -677,8 +677,8 @@ class MovieCorpus:
 
                 # For wrong dialogues
                 for idx, yi_ in enumerate(yi_s):
-                    # x[i, 0, yi_, :w_length_fa, 0] = w_fa_concat
-                    # x[i, 0, yi_, :w_length_fa, 1] = t_fa_concat
+                    x[i, 0, yi_, :w_length_fa, 0] = w_fa_concat
+                    x[i, 0, yi_, :w_length_fa, 1] = t_fa_concat
                     x[i, 1, yi_, :w_length_d_wr[idx], 0] = w_d_wr[idx]
                     x[i, 1, yi_, :w_length_d_wr[idx], 1] = t_wr[idx]
                 # ***************************************************
@@ -698,8 +698,8 @@ class MovieCorpus:
             for b in bf:
                 sst = end
                 end = b             # Note: positional embd is put in the last index: 2
-                # x[i, 0, :, sst:end, 2] = np.arange(pos_emb_stt, pos_emb_stt + end - sst)
-                x[i, 0, yi, sst:end, 2] = np.arange(pos_emb_stt, pos_emb_stt + end - sst)
+                x[i, 0, :, sst:end, 2] = np.arange(pos_emb_stt, pos_emb_stt + end - sst)
+                # x[i, 0, yi, sst:end, 2] = np.arange(pos_emb_stt, pos_emb_stt + end - sst)
 
             # continuing with the attitudes ...
             """
@@ -709,8 +709,8 @@ class MovieCorpus:
             """
             sst = end
             end = sst + a_length
-            # x[i, 0, :, sst:end, 2] = np.full([a_length], pos_emb_stt)
-            x[i, 0, yi, sst:end, 2] = np.full([a_length], pos_emb_stt)
+            x[i, 0, :, sst:end, 2] = np.full([a_length], pos_emb_stt)
+            # x[i, 0, yi, sst:end, 2] = np.full([a_length], pos_emb_stt)
 
             # and finally for the dialogue.
             """
@@ -727,11 +727,11 @@ class MovieCorpus:
             - so if one wrong dialogue is used, list of 2 similar values created e.g. [40517, 40517]
             """
             if self.params.dynamic_pos_embeddings:      # initially True (use False for first try)
-                poss_latest_start = 512 - d_length - 30 # TODO: Remove this hack
+                poss_latest_start = 512 - d_length - 1
                 pos_emb_stt_l = [np.random.randint(low=pos_emb_stt, high=pos_emb_stt + poss_latest_start)]
                 if x_wr is not None:
                     for idx in range(len(x_wr)):
-                        poss_latest_start = 512 - w_length_d_wr[idx] - 1  # TODO: Bug: w_length_wr is wrong length
+                        poss_latest_start = 512 - w_length_d_wr[idx] - 1
                         pos_emb_stt_l.append(np.random.randint(low=pos_emb_stt, high=pos_emb_stt + poss_latest_start))
             else:
                 if x_wr is None:
@@ -755,8 +755,13 @@ class MovieCorpus:
                 - for-loop: create positional embedding for the other wrong dialogues at indices yi_s
                 """
                 end_wrs = [sst + len(x_wr[idx]) for idx in range(len(x_wr))]
+                x[i, 1, yi, sst:end, 2] = np.arange(pos_emb_stt_l[0], pos_emb_stt_l[0] + d_length)
+                for idx, (end_wr, yi_) in enumerate(zip(end_wrs, yi_s)):
+                    x[i, 1, yi_, sst:end_wr, 2] = np.arange(pos_emb_stt_l[idx + 1],
+                                                            pos_emb_stt_l[idx + 1] + len(x_wr[idx]))
 
                 # DEBUG
+                '''
                 values = np.arange(pos_emb_stt_l[0], pos_emb_stt_l[0] + d_length)
                 for val in values:
                     if val >= 41030:
@@ -769,7 +774,7 @@ class MovieCorpus:
                         if val >= 41030 or i == 131:
                             stop = "here"
                     x[i, 1, yi_, sst:end_wr, 2] = values2
-
+                '''
         return x, m, y
 
     def process_attitudes(self, attitudes, speaker_turns, x, t, inference=False):

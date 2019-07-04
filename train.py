@@ -352,10 +352,10 @@ if __name__ == '__main__':
     print(params)
 
     """
-    python train.py --dataset moviecorpus --desc moviecorpus --use_encoder --n_gpu 2 --submit --n_batch 2 
-    --n_data_fraction 6 --n_enc_layer 2 --n_layer 2
+    python train.py --dataset moviecorpus --desc moviecorpus --use_encoder --submit --n_data_fraction 1 --n_enc_layer 4 
+    --n_layer 4 --n_gpu 2 --n_batch 8 --n_acc_batch 4
     
-    --n_batch 8 --n_acc_size 2
+    --n_batch 2 
     """
 
     # --- set seeds ---------------------------------------------------------------------------------------------------
